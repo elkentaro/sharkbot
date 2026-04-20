@@ -154,7 +154,7 @@ ollama pull llama3.1
 
 ### Wireshark Lua Client
 
-Copy [smart_filter.lua](/mnt/usb/sharkbot/smart_filter.lua:1) into a Wireshark Lua plugin directory and restart Wireshark.
+Copy [`smart_filter.lua`](smart_filter.lua) into a Wireshark Lua plugin directory and restart Wireshark.
 
 Common notes:
 
@@ -295,7 +295,7 @@ AI provider does not work:
 
 ## Systemd
 
-A sample unit file is included at [deploy/systemd/sharkbot.service](/mnt/usb/sharkbot/deploy/systemd/sharkbot.service:1).
+A sample unit file is included at [`deploy/systemd/sharkbot.service`](deploy/systemd/sharkbot.service).
 
 The sample assumes:
 
@@ -324,4 +324,4 @@ sudo systemctl restart sharkbot.service
 
 ## Change Log
 
-Project history is tracked in [CHANGELOG.md](/mnt/usb/sharkbot/CHANGELOG.md:1).
+Project history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
