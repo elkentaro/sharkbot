@@ -471,3 +471,58 @@ select option,
 .backend-inline-actions {
   margin-top: 12px;
 }
+
+.missing-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(110,168,254,0.14), transparent 35%),
+    var(--bg);
+}
+
+.missing-card {
+  width: min(560px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 16px 42px rgba(0,0,0,0.18);
+}
+
+.missing-card h1 {
+  margin: 0 0 12px;
+  font-size: 1.8rem;
+}
+
+.missing-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.missing-meta {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.missing-actions {
+  margin-top: 22px;
+}
+
+.missing-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--accent-strong), var(--accent));
+  color: #09101d;
+  font-weight: 700;
+  text-decoration: none;
+}

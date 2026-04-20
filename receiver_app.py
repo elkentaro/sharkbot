@@ -210,6 +210,15 @@ def get_state(session_id: str) -> SessionState:
     return state
 
 
+def session_missing_payload(session_id: str) -> Dict[str, str]:
+    return {
+        "error": "session_not_found",
+        "session_id": session_id,
+        "title": "Session not found",
+        "message": "This packet session is no longer available. Go back to Wireshark and launch Smart Filter Assistant again from the packet menu.",
+    }
+
+
 def detect_protocols(text: str) -> List[str]:
     found = []
     for word, expr in PROTOCOL_MAP.items():
@@ -661,13 +670,20 @@ def api_create_session():
 
 @app.get("/session/<session_id>")
 def session_page(session_id: str):
-    get_state(session_id)
+    try:
+        get_state(session_id)
+    except KeyError:
+        payload = session_missing_payload(session_id)
+        return render_template("session_missing.html", **payload), 404
     return render_template("index.html", session_id=session_id)
 
 
 @app.get("/api/session/<session_id>")
 def api_session_state(session_id: str):
-    return jsonify(response_payload(get_state(session_id)))
+    try:
+        return jsonify(response_payload(get_state(session_id)))
+    except KeyError:
+        return jsonify(session_missing_payload(session_id)), 404
 
 
 @app.post("/api/session/<session_id>/message")
