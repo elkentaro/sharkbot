@@ -6,9 +6,10 @@ import re
 import secrets
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 from core.config import load_config
 
@@ -737,6 +738,112 @@ def session_web_url(session_id: str) -> str:
     return f"{base_url}/session/{session_id}"
 
 
+def apply_context_update(state: SessionState, context: Dict[str, Any], source_label: str = "Wireshark") -> None:
+    updated_context = dict(context)
+    updated_context["packet_protocol"] = infer_packet_protocol(updated_context)
+    state.context = updated_context
+    state.pending = None
+    state.resolved = {}
+    state.suggested_actions = guided_next_steps(state)
+    summary = summary_from_context(state.context)
+    state.messages.append({
+        "type": "system_notice",
+        "text": f"Investigation context updated from {source_label}.",
+    })
+    state.messages.append({
+        "type": "packet_summary",
+        "summary": summary,
+        "provider": state.settings["provider"],
+        "model": state.settings["model"],
+    })
+    state.messages.append({
+        "type": "suggested_actions",
+        "title": "Continue this investigation",
+        "items": state.suggested_actions,
+    })
+
+
+def export_transcript_markdown(state: SessionState) -> str:
+    summary = summary_from_context(state.context)
+    lines = [
+        "# SharkBot Investigation Export",
+        "",
+        f"- Session ID: `{state.session_id}`",
+        f"- Exported at: `{datetime.now().isoformat(timespec='seconds')}`",
+        f"- Selected backend: `{state.settings.get('provider', '')} / {state.settings.get('model', '')}`",
+        "",
+        "## Current Packet Context",
+        "",
+        f"- Frame: `{summary['frame']}`",
+        f"- Protocol: `{summary['protocol']}`",
+        f"- Source: `{summary['source']}`",
+        f"- Destination: `{summary['destination']}`",
+        f"- Selected IP: `{summary['selected_ip']}`",
+        f"- Selected MAC: `{summary['selected_mac']}`",
+        f"- Current filter: `{summary['current_filter'] or '(empty)'}`",
+        "",
+        "## Transcript",
+        "",
+    ]
+
+    for message in state.messages:
+        message_type = message.get("type")
+        if message_type == "system_notice":
+            lines.extend(["### System", "", message.get("text", ""), ""])
+        elif message_type == "assistant_text":
+            lines.extend(["### Assistant", "", message.get("text", ""), ""])
+        elif message_type in {"user_message", "user_choice"}:
+            lines.extend(["### You", "", message.get("text", ""), ""])
+        elif message_type == "packet_summary":
+            packet = message.get("summary", {})
+            lines.extend(
+                [
+                    "### Packet Context",
+                    "",
+                    f"- Frame: `{packet.get('frame', '')}`",
+                    f"- Protocol: `{packet.get('protocol', '')}`",
+                    f"- Source: `{packet.get('source', '')}`",
+                    f"- Destination: `{packet.get('destination', '')}`",
+                    f"- Selected IP: `{packet.get('selected_ip', '')}`",
+                    f"- Selected MAC: `{packet.get('selected_mac', '')}`",
+                    "",
+                ]
+            )
+        elif message_type == "clarification":
+            lines.extend(["### Clarification", "", message.get("question", ""), ""])
+            options = message.get("options") or []
+            if options:
+                lines.append("Options:")
+                lines.extend([f"- {item.get('label', item.get('id', ''))}" for item in options])
+                lines.append("")
+        elif message_type == "filter_result":
+            lines.extend(
+                [
+                    f"### {message.get('title') or 'Filter Result'}",
+                    "",
+                    message.get("explanation", ""),
+                    "",
+                    "```wireshark",
+                    message.get("filter", ""),
+                    "```",
+                    "",
+                ]
+            )
+            if message.get("source_note"):
+                lines.extend([message["source_note"], ""])
+        elif message_type == "explanation":
+            lines.extend([f"### {message.get('title') or 'Explanation'}", "", message.get("text", ""), ""])
+            if message.get("source_note"):
+                lines.extend([message["source_note"], ""])
+        elif message_type == "suggested_actions":
+            lines.extend([f"### {message.get('title') or 'Suggested Actions'}", ""])
+            lines.extend([f"- {item.get('label', '')}" for item in message.get("items") or []])
+            lines.append("")
+        elif message_type == "error":
+            lines.extend(["### Error", "", message.get("text", ""), ""])
+    return "\n".join(lines).strip() + "\n"
+
+
 @app.get("/")
 def home():
     return "Smart Filter Receiver running"
@@ -771,6 +878,36 @@ def api_session_state(session_id: str):
         return jsonify(response_payload(get_state(session_id)))
     except KeyError:
         return jsonify(session_missing_payload(session_id)), 404
+
+
+@app.post("/api/session/<session_id>/context")
+def api_session_context(session_id: str):
+    try:
+        state = get_state(session_id)
+    except KeyError:
+        return jsonify(session_missing_payload(session_id)), 404
+    payload = request.get_json(force=True, silent=True) or {}
+    context = payload.get("context") or payload
+    if not context:
+        return jsonify({"error": "Missing context"}), 400
+    source_label = str(context.get("launch_source") or payload.get("source_label") or "Wireshark").replace("_", " ")
+    apply_context_update(state, context, source_label=source_label)
+    return jsonify({"session_id": state.session_id, "web_url": session_web_url(state.session_id), "state": response_payload(state)})
+
+
+@app.get("/api/session/<session_id>/export")
+def api_session_export(session_id: str):
+    try:
+        state = get_state(session_id)
+    except KeyError:
+        return jsonify(session_missing_payload(session_id)), 404
+    filename = f"sharkbot-investigation-{session_id}.md"
+    body = export_transcript_markdown(state)
+    return Response(
+        body,
+        mimetype="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/api/session/<session_id>/message")

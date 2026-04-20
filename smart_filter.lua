@@ -1,4 +1,4 @@
--- smart_filter.lua - SharkBot v1.5.0 Wireshark launcher with packet-context handoff
+-- smart_filter.lua - SharkBot v1.6.0 Wireshark launcher with packet-context handoff
 --
 -- Receiver config:
 -- Edit RECEIVER_BASE below to point at your receiver.
@@ -11,6 +11,7 @@ if not gui_enabled() then
 end
 
 local RECEIVER_BASE = os.getenv("SMART_FILTER_RECEIVER") or "http://127.0.0.1:8765"
+local LAST_SESSION_ID = ""
 
 local function json_escape(s)
     s = tostring(s or "")
@@ -44,6 +45,14 @@ local function extract_session_id(body)
     return body:match('"session_id"%s*:%s*"([^"]+)"')
 end
 
+local function extract_message(body)
+    return body:match('"message"%s*:%s*"([^"]+)"')
+end
+
+local function trim(s)
+    return tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
 local function browser_url_looks_unusable(url)
     if not url or url == "" then
         return true
@@ -62,6 +71,45 @@ local function build_browser_url(body)
         return RECEIVER_BASE:gsub("/+$", "") .. "/session/" .. session_id
     end
     return web_url
+end
+
+local function receiver_post(path, payload)
+    local cmd = "curl -sS -X POST " .. shell_quote_single(RECEIVER_BASE .. path) ..
+        " -H 'Content-Type: application/json' --data-binary " .. shell_quote_single(payload) ..
+        " -w " .. shell_quote_single("\n__STATUS__:%{http_code}") .. " 2>&1"
+
+    local pipe = io.popen(cmd)
+    if not pipe then
+        return nil, nil, "Unable to call curl."
+    end
+
+    local raw = pipe:read("*a") or ""
+    pipe:close()
+
+    local status = raw:match("\n__STATUS__:(%d%d%d)%s*$")
+    if not status then
+        return nil, nil, trim(raw) ~= "" and trim(raw) or "Receiver did not return a valid HTTP response."
+    end
+    local body = raw:gsub("\n__STATUS__:%d%d%d%s*$", "")
+    return body, tonumber(status), nil
+end
+
+local function remember_session_id(body)
+    local session_id = extract_session_id(body)
+    if session_id and session_id ~= "" then
+        LAST_SESSION_ID = session_id
+    end
+    return session_id
+end
+
+local function open_investigation_from_body(body)
+    local web_url = build_browser_url(body)
+    if not web_url then
+        new_dialog("SharkBot Error", function() end, "Receiver did not return a browser URL. Make sure the receiver is running.")
+        return
+    end
+    remember_session_id(body)
+    os.execute(detect_open_command(web_url))
 end
 
 local function maybe_get_filter()
@@ -126,34 +174,50 @@ local function build_context_json(ctx)
     '}'
 end
 
-local function launch_with_context(ctx)
+local function launch_new_investigation(ctx)
     local payload = build_context_json(ctx)
-    local cmd = "curl -s -X POST " .. shell_quote_single(RECEIVER_BASE .. "/api/session") ..
-        " -H 'Content-Type: application/json' --data-binary " .. shell_quote_single(payload)
-
-    local pipe = io.popen(cmd)
-    if not pipe then
-        new_dialog("Smart Filter Error", function() end, "Unable to call curl.")
+    local body, status, err = receiver_post("/api/session", payload)
+    if err then
+        new_dialog("SharkBot Error", function() end, err)
         return
     end
-
-    local body = pipe:read("*a") or ""
-    pipe:close()
-
-    local web_url = build_browser_url(body)
-    if not web_url then
-        new_dialog("Smart Filter Error", function() end, "Receiver did not return web_url. Make sure the receiver is running.")
+    if not status or status < 200 or status >= 300 then
+        local message = extract_message(body) or "Receiver rejected the new investigation request."
+        new_dialog("SharkBot Error", function() end, message)
         return
     end
-
-    os.execute(detect_open_command(web_url))
+    open_investigation_from_body(body)
 end
 
-local function launch_from_tools_menu()
-    launch_with_context({
-        launch_source = "tools_menu",
-        current_filter = maybe_get_filter(),
-    })
+local function continue_investigation(session_id, ctx)
+    local clean_session_id = trim(session_id)
+    if clean_session_id == "" then
+        new_dialog("SharkBot Error", function() end, "A session ID is required to continue an investigation.")
+        return
+    end
+    local payload = build_context_json(ctx)
+    local body, status, err = receiver_post("/api/session/" .. clean_session_id .. "/context", payload)
+    if err then
+        new_dialog("SharkBot Error", function() end, err)
+        return
+    end
+    if not status or status < 200 or status >= 300 then
+        local message = extract_message(body) or "That investigation session was not found on the receiver."
+        new_dialog("SharkBot Error", function() end, message)
+        return
+    end
+    LAST_SESSION_ID = clean_session_id
+    open_investigation_from_body(body)
+end
+
+local function prompt_for_session_id_and_continue(ctx)
+    new_dialog("Continue SharkBot Investigation", function(session_id)
+        session_id = trim(session_id)
+        if session_id == "" then
+            return
+        end
+        continue_investigation(session_id, ctx)
+    end, "Session ID")
 end
 
 local interested_fields = {
@@ -179,7 +243,31 @@ local interested_fields = {
     ["btcommon.addr"] = "selected_mac",
 }
 
-local function packet_menu_callback(...)
+local function base_context(launch_source)
+    return {
+        launch_source = launch_source,
+        current_filter = maybe_get_filter(),
+    }
+end
+
+local function launch_from_tools_menu()
+    launch_new_investigation(base_context("tools_menu"))
+end
+
+local function continue_from_tools_menu()
+    local ctx = base_context("tools_menu_continue")
+    if LAST_SESSION_ID ~= "" then
+        continue_investigation(LAST_SESSION_ID, ctx)
+        return
+    end
+    prompt_for_session_id_and_continue(ctx)
+end
+
+local function continue_from_tools_menu_by_id()
+    prompt_for_session_id_and_continue(base_context("tools_menu_continue"))
+end
+
+local function collect_packet_context(...)
     local ctx = {
         launch_source = "packet_menu",
         current_filter = maybe_get_filter(),
@@ -216,8 +304,32 @@ local function packet_menu_callback(...)
         ctx.protocol_hint = "ethernet"
     end
 
-    launch_with_context(ctx)
+    return ctx
 end
 
-register_menu("Tools/Smart Filter Assistant", launch_from_tools_menu, MENU_TOOLS_UNSORTED)
-register_packet_menu("Smart Filter Assistant", packet_menu_callback)
+local function packet_menu_new_callback(...)
+    launch_new_investigation(collect_packet_context(...))
+end
+
+local function packet_menu_continue_callback(...)
+    local ctx = collect_packet_context(...)
+    ctx.launch_source = "packet_menu_continue"
+    if LAST_SESSION_ID ~= "" then
+        continue_investigation(LAST_SESSION_ID, ctx)
+        return
+    end
+    prompt_for_session_id_and_continue(ctx)
+end
+
+local function packet_menu_continue_by_id_callback(...)
+    local ctx = collect_packet_context(...)
+    ctx.launch_source = "packet_menu_continue"
+    prompt_for_session_id_and_continue(ctx)
+end
+
+register_menu("Tools/SharkBot/New Investigation", launch_from_tools_menu, MENU_TOOLS_UNSORTED)
+register_menu("Tools/SharkBot/Continue Current Investigation", continue_from_tools_menu, MENU_TOOLS_UNSORTED)
+register_menu("Tools/SharkBot/Continue Investigation by ID", continue_from_tools_menu_by_id, MENU_TOOLS_UNSORTED)
+register_packet_menu("SharkBot: New Investigation", packet_menu_new_callback)
+register_packet_menu("SharkBot: Continue Current Investigation", packet_menu_continue_callback)
+register_packet_menu("SharkBot: Continue Investigation by ID", packet_menu_continue_by_id_callback)

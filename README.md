@@ -4,7 +4,7 @@
 
 SharkBot is a Wireshark companion app for packet explanation and display-filter generation.
 
-Current release: `v1.5.0`
+Current release: `v1.6.0`
 
 Workflow:
 
@@ -234,6 +234,7 @@ curl -sS http://127.0.0.1:8765/api/providers
 5. Let the Lua helper open the browser session.
 6. Choose a configured AI backend in the browser.
 7. Ask questions or click suggested actions until you get the explanation or filter you need.
+8. After narrowing the capture in Wireshark, select a new packet and use a continue action to keep working in the same investigation.
 
 ### Chat Behavior
 
@@ -242,6 +243,30 @@ curl -sS http://127.0.0.1:8765/api/providers
 - normal questions still default to rule-based logic
 - AI is used only for prompts ending in `+AI`, `+OpenAI`, `+Claude`, `+Gemini`, or `+Ollama`
 - if a live AI call fails, the app falls back to rule-based output and labels that clearly
+
+### Continuing An Investigation
+
+SharkBot investigation sessions are kept in memory on the receiver. That means you can move back and forth between Wireshark and the companion app during one running investigation, as long as the receiver process stays up.
+
+New Lua actions are available for this:
+
+- `SharkBot: New Investigation`
+- `SharkBot: Continue Current Investigation`
+- `SharkBot: Continue Investigation by ID`
+
+The bottom-left sidebar usage section shows the investigation ID along with `Copy ID` and `Download Chat`. If Wireshark no longer remembers the current investigation ID, copy it from that section and use `Continue Investigation by ID`.
+
+When you continue an investigation from Wireshark, the server appends:
+
+- a context-updated notice
+- a new packet summary card
+- refreshed suggested next steps
+
+The previous chat history stays intact.
+
+### Downloading The Investigation
+
+Use `Download Chat` in the bottom-left sidebar usage section to export the current investigation as a Markdown file for reference.
 
 Examples:
 
@@ -257,6 +282,7 @@ Show DNS traffic except mDNS
 ### UI Notes
 
 - the packet card is visually separated from normal chat messages
+- the bottom-left sidebar usage section keeps the investigation ID, `Copy ID`, and `Download Chat` available while you work
 - AI-assisted, rule-based, system, and packet labels use different colors
 - filter expressions are highlighted so they stand out in both light and dark themes
 - stale or expired session URLs return a friendly `Session not found` page instead of a traceback

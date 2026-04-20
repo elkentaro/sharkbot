@@ -4,6 +4,8 @@ const promptEl = document.getElementById('prompt');
 const composerEl = document.getElementById('composer');
 const clearBtnEl = document.getElementById('clearBtn');
 const reconfigureAiBtnEl = document.getElementById('reconfigureAiBtn');
+const copySessionIdBtnEl = document.getElementById('copySessionIdBtn');
+const exportChatBtnEl = document.getElementById('exportChatBtn');
 const contextBoxEl = document.getElementById('contextBox');
 const providerSelectEl = document.getElementById('providerSelect');
 const modelSelectEl = document.getElementById('modelSelect');
@@ -223,6 +225,25 @@ function syncHeaderActions(state) {
   const canConfigure = hasConfiguredAiProviders(state);
   reconfigureAiBtnEl.hidden = !canConfigure;
   reconfigureAiBtnEl.textContent = backendCardForcedOpen ? 'Close AI Setup' : 'Reconfigure AI';
+}
+
+async function copySessionId() {
+  try {
+    await navigator.clipboard.writeText(sessionId);
+    if (copySessionIdBtnEl) {
+      const previous = copySessionIdBtnEl.textContent;
+      copySessionIdBtnEl.textContent = 'Copied';
+      setTimeout(() => {
+        copySessionIdBtnEl.textContent = previous;
+      }, 1200);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function downloadInvestigation() {
+  window.location.href = `/api/session/${sessionId}/export`;
 }
 
 function renderMessage(message) {
@@ -591,6 +612,8 @@ if (reconfigureAiBtnEl) {
     renderState(await getJSON(`/api/session/${sessionId}`));
   });
 }
+if (copySessionIdBtnEl) copySessionIdBtnEl.addEventListener('click', copySessionId);
+if (exportChatBtnEl) exportChatBtnEl.addEventListener('click', downloadInvestigation);
 clearBtnEl.addEventListener('click', async () => renderState(await getJSON(`/api/session/${sessionId}/clear`, { method: 'POST' })));
 if (themeSelectEl) themeSelectEl.addEventListener('change', () => applyTheme(themeSelectEl.value));
 
