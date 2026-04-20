@@ -3,6 +3,7 @@ const messagesEl = document.getElementById('messages');
 const promptEl = document.getElementById('prompt');
 const composerEl = document.getElementById('composer');
 const clearBtnEl = document.getElementById('clearBtn');
+const reconfigureAiBtnEl = document.getElementById('reconfigureAiBtn');
 const contextBoxEl = document.getElementById('contextBox');
 const providerSelectEl = document.getElementById('providerSelect');
 const modelSelectEl = document.getElementById('modelSelect');
@@ -12,6 +13,7 @@ const themeSelectEl = document.getElementById('themeSelect');
 let currentProviders = [];
 let currentSettings = null;
 let requestInFlight = false;
+let backendCardForcedOpen = false;
 
 function applyTheme(theme) {
   const chosen = theme === 'light' ? 'light' : 'dark';
@@ -199,6 +201,10 @@ function composerShouldBeLocked(state) {
   return Boolean(state?.providers?.some((provider) => provider.id !== 'rule_based' && provider.available !== false)) && !state?.backend_confirmed;
 }
 
+function hasConfiguredAiProviders(state) {
+  return Boolean(state?.providers?.some((provider) => provider.id !== 'rule_based' && provider.available !== false));
+}
+
 function syncComposerLock(state) {
   const locked = composerShouldBeLocked(state);
   if (promptEl) {
@@ -210,6 +216,13 @@ function syncComposerLock(state) {
   const submitBtn = composerEl?.querySelector('button[type="submit"]');
   if (submitBtn) submitBtn.disabled = locked;
   if (composerEl) composerEl.classList.toggle('locked', locked);
+}
+
+function syncHeaderActions(state) {
+  if (!reconfigureAiBtnEl) return;
+  const canConfigure = hasConfiguredAiProviders(state);
+  reconfigureAiBtnEl.hidden = !canConfigure;
+  reconfigureAiBtnEl.textContent = backendCardForcedOpen ? 'Close AI Setup' : 'Reconfigure AI';
 }
 
 function renderMessage(message) {
@@ -403,8 +416,13 @@ function makeBackendOnboardingCard(settings, providers) {
   controls.appendChild(modelSelect);
 
   function refreshCopy() {
-    title.textContent = `Set background AI assistance: ${providerDisplayName(chosenProviderId)} / ${chosenModel}`;
-    body.textContent = 'Pick one of the configured AI backends to start this session. The packet summary and suggested next steps will appear after you confirm it.';
+    const alreadyConfigured = currentProvider !== 'rule_based';
+    title.textContent = alreadyConfigured
+      ? `Reconfigure background AI assistance: ${providerDisplayName(chosenProviderId)} / ${chosenModel}`
+      : `Set background AI assistance: ${providerDisplayName(chosenProviderId)} / ${chosenModel}`;
+    body.textContent = alreadyConfigured
+      ? 'Choose a different provider or model, then save to update the session backend. Rule-based replies still stay the default unless you use +AI or a provider suffix.'
+      : 'Pick one of the configured AI backends to start this session. The packet summary and suggested next steps will appear after you confirm it.';
   }
 
   function rebuildModels() {
@@ -462,13 +480,14 @@ function renderState(state) {
   currentSettings = state.settings || currentSettings;
   fillProviderControls(currentProviders, currentSettings);
   syncComposerLock(state);
+  syncHeaderActions(state);
 
   const messages = state.messages || [];
   const systemNotice = messages.find((m) => m.type === 'system_notice');
   const rest = messages.filter((m) => m.type !== 'system_notice');
 
   if (systemNotice) appendRenderedMessage(systemNotice);
-  if (composerShouldBeLocked(state) || !(currentProviders || []).some((provider) => provider.id !== 'rule_based' && provider.available !== false)) {
+  if (backendCardForcedOpen || composerShouldBeLocked(state) || !hasConfiguredAiProviders(state)) {
     messagesEl.appendChild(makeBackendOnboardingCard(currentSettings || state.settings || {}, currentProviders || []));
   }
   rest.forEach((message) => appendRenderedMessage(message));
@@ -553,6 +572,7 @@ async function saveSettings() {
     method: 'POST',
     body: JSON.stringify({ provider: chosenProvider, model: chosenModel }),
   });
+  backendCardForcedOpen = false;
   renderState(state);
 }
 
@@ -565,6 +585,12 @@ composerEl.addEventListener('submit', async (event) => {
 
 if (providerSelectEl) providerSelectEl.addEventListener('change', rebuildModelSelect);
 if (saveSettingsBtnEl) saveSettingsBtnEl.addEventListener('click', saveSettings);
+if (reconfigureAiBtnEl) {
+  reconfigureAiBtnEl.addEventListener('click', async () => {
+    backendCardForcedOpen = !backendCardForcedOpen;
+    renderState(await getJSON(`/api/session/${sessionId}`));
+  });
+}
 clearBtnEl.addEventListener('click', async () => renderState(await getJSON(`/api/session/${sessionId}/clear`, { method: 'POST' })));
 if (themeSelectEl) themeSelectEl.addEventListener('change', () => applyTheme(themeSelectEl.value));
 

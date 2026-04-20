@@ -301,6 +301,8 @@ button:hover { filter: brightness(1.07); }
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .topbar-theme-label {
