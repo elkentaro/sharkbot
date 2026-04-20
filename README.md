@@ -1,3 +1,5 @@
+<img src="sharkbot.jpeg" width="200">
+
 # Smart Filter Assistant
 
 Smart Filter Assistant is a Wireshark companion app.
