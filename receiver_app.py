@@ -332,19 +332,42 @@ def guided_next_steps(state: SessionState) -> List[Dict[str, str]]:
     return deduped[:6]
 
 
+def resolve_ai_provider_for_text(state: SessionState, user_text: str) -> tuple[str, bool]:
+    _, override_provider, explicit_ai = parse_ai_override(user_text)
+    requested_provider = override_provider or state.settings.get("provider", "rule_based")
+    if explicit_ai and override_provider is None and requested_provider == "rule_based":
+        configured_ai = available_ai_provider_ids()
+        if configured_ai:
+            requested_provider = configured_ai[0]
+    if requested_provider not in PROVIDERS:
+        requested_provider = "rule_based"
+    return requested_provider, explicit_ai
+
+
+def chosen_model_for_provider(state: SessionState, provider_id: str) -> str:
+    provider = PROVIDERS[provider_id]
+    current_provider = state.settings.get("provider")
+    current_model = state.settings.get("model")
+    if provider_id == current_provider and current_model in provider.models:
+        return current_model
+    return provider.models[0]
+
+
 def explain_filter_limit(state: SessionState, original_text: str, reason: str, technical: bool = False) -> Dict[str, Any]:
-    selected_provider = state.settings.get("provider", "rule_based")
+    selected_provider, explicit_ai = resolve_ai_provider_for_text(state, original_text)
     provider = PROVIDERS.get(selected_provider, PROVIDERS["rule_based"])
-    can_use_ai = selected_provider != "rule_based" and provider.available()
+    can_use_ai = explicit_ai and selected_provider != "rule_based" and provider.available()
 
     if can_use_ai:
+        cleaned_text, _, _ = parse_ai_override(original_text)
+        chosen_model = chosen_model_for_provider(state, selected_provider)
         guidance_prompt = (
             "Explain to the user why the rule-based Wireshark helper could not safely complete this filter request. "
             "Be practical and concise. Mention the limitation clearly, then suggest the next best concrete actions.\n\n"
-            f"User request: {original_text}\n"
+            f"User request: {cleaned_text}\n"
             f"Reason: {reason}"
         )
-        result = provider.explain_packet(state.context, guidance_prompt, state.settings.get("model"))
+        result = provider.explain_packet(state.context, guidance_prompt, chosen_model)
         response_source = "ai" if result.meta.get("live", False) else "fallback"
         source_note = (
             f"AI-assisted guidance using {provider.display_name} to explain a rule-based limitation."
@@ -563,18 +586,12 @@ def classify_user_text(text: str) -> str:
 
 
 def explain_packet(state: SessionState, user_text: str) -> Dict[str, Any]:
-    cleaned_text, override_provider, explicit_ai = parse_ai_override(user_text)
-    requested_provider = override_provider or state.settings["provider"]
-    if explicit_ai and override_provider is None and requested_provider == "rule_based":
-        configured_ai = available_ai_provider_ids()
-        if configured_ai:
-            requested_provider = configured_ai[0]
+    cleaned_text, _, _ = parse_ai_override(user_text)
+    requested_provider, explicit_ai = resolve_ai_provider_for_text(state, user_text)
     provider_id = requested_provider if explicit_ai else "rule_based"
-    if provider_id not in PROVIDERS:
-        provider_id = "rule_based"
 
     provider = PROVIDERS[provider_id]
-    chosen_model = state.settings["model"] if provider_id == state.settings["provider"] else provider.models[0]
+    chosen_model = chosen_model_for_provider(state, provider_id)
     result = provider.explain_packet(state.context, cleaned_text, chosen_model)
 
     response_source = "rule_based"
@@ -597,7 +614,7 @@ def explain_packet(state: SessionState, user_text: str) -> Dict[str, Any]:
     if response_source == "rule_based":
         message = enrich_rule_based_response(message, state.context, state.settings)
     elif response_source == "fallback":
-        backend_name = PROVIDERS[state.settings["provider"]].display_name
+        backend_name = PROVIDERS[provider_id].display_name
         message["upgrade_title"] = "AI did not complete. Try again with +AI or switch the selected backend."
         message["upgrade_suggestions"] = ai_upgrade_suggestions(state.context, state.settings)
         message["source_note"] = f"AI was explicitly requested, but the selected backend ({backend_name}) failed, so the assistant fell back to rule-based logic."
