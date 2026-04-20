@@ -24,7 +24,8 @@ class OllamaProvider(AIProvider):
 
     def explain_packet(self, context: Dict[str, Any], user_text: str, model: str | None = None) -> ProviderResult:
         chosen_model = model or self.models[0]
-        prompt = self.build_explanation_prompt(context, user_text)
+        system_prompt = self.build_system_prompt()
+        user_prompt = self.build_user_prompt(context, user_text)
         try:
             resp = requests.post(
                 f"{self._base_url.rstrip('/')}/api/chat",
@@ -32,7 +33,10 @@ class OllamaProvider(AIProvider):
                 json={
                     "model": chosen_model,
                     "stream": False,
-                    "messages": [{"role": "user", "content": prompt}],
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
                 },
                 timeout=self._timeout,
             )

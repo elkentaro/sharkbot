@@ -816,5 +816,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default=BIND_HOST)
     parser.add_argument("--port", type=int, default=int(os.getenv("SMART_FILTER_PORT", "8765")))
+    parser.add_argument("--debug", action="store_true", default=os.getenv("SMART_FILTER_DEBUG", "").lower() in {"1", "true", "yes", "on"})
     args = parser.parse_args()
-    app.run(host=args.host, port=args.port, debug=True)
+    app.run(host=args.host, port=args.port, debug=args.debug, use_reloader=args.debug)

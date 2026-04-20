@@ -48,6 +48,7 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
         "receiver": {},
         "defaults": {},
         "providers": {},
+        "assistant": {},
     }
 
     if not path.exists():
@@ -58,10 +59,12 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
     config["receiver"] = raw.get("receiver", {})
     config["defaults"] = raw.get("defaults", {})
     config["providers"] = raw.get("providers", {})
+    config["assistant"] = raw.get("assistant", {})
 
     receiver = config["receiver"]
     defaults = config["defaults"]
     provider_cfg = config["providers"]
+    assistant = config["assistant"]
     advanced = raw.get("advanced", {})
     config["advanced"] = advanced
 
@@ -77,6 +80,17 @@ def load_config(config_path: str | None = None) -> Dict[str, Any]:
         os.environ["SMART_FILTER_PROVIDER"] = str(defaults["provider"])
     if defaults.get("model"):
         os.environ["SMART_FILTER_MODEL"] = str(defaults["model"])
+    if assistant.get("profile"):
+        os.environ["SMART_FILTER_ASSISTANT_PROFILE"] = str(assistant["profile"])
+    if assistant.get("name"):
+        os.environ["SMART_FILTER_ASSISTANT_NAME"] = str(assistant["name"])
+    if assistant.get("custom_instructions"):
+        os.environ["SMART_FILTER_ASSISTANT_CUSTOM_INSTRUCTIONS"] = str(assistant["custom_instructions"])
+    if assistant.get("prompt_file"):
+        prompt_path = Path(str(assistant["prompt_file"]))
+        if not prompt_path.is_absolute():
+            prompt_path = path.parent / prompt_path
+        os.environ["SMART_FILTER_ASSISTANT_PROMPT_FILE"] = str(prompt_path)
     if advanced.get("timeout_seconds"):
         os.environ["SMART_FILTER_PROVIDER_TIMEOUT"] = str(advanced["timeout_seconds"])
 

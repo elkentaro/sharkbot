@@ -26,7 +26,8 @@ class GeminiProvider(AIProvider):
         if not self.available():
             return self._fallback.explain_packet(context, user_text, model)
         chosen_model = model or self.models[0]
-        prompt = self.build_explanation_prompt(context, user_text)
+        system_prompt = self.build_system_prompt()
+        user_prompt = self.build_user_prompt(context, user_text)
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
         try:
             resp = requests.post(
@@ -34,10 +35,11 @@ class GeminiProvider(AIProvider):
                 params={"key": api_key},
                 headers={"Content-Type": "application/json"},
                 json={
+                    "systemInstruction": {"parts": [{"text": system_prompt}]},
                     "contents": [
                         {
                             "role": "user",
-                            "parts": [{"text": prompt}],
+                            "parts": [{"text": user_prompt}],
                         }
                     ]
                 },

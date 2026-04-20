@@ -382,7 +382,7 @@ button:hover { filter: brightness(1.07); }
 }
 
 
-/* v0.9.5: make provider/model dropdown text visible in dark mode */
+/* Keep provider/model dropdown text readable in both themes. */
 select,
 .topbar-theme-select,
 #inlineProviderSelect,

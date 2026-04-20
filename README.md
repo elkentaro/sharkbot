@@ -1,60 +1,31 @@
 <img src="sharkbot.jpeg" width="200">
 
-# Smart Filter Assistant
+# SharkBot
 
-Smart Filter Assistant is a Wireshark companion app.
+SharkBot is a Wireshark companion app for packet explanation and display-filter generation.
 
-The workflow is:
+Current release: `v1.5.0`
 
-1. In Wireshark, the user selects a packet and launches the Lua helper from the packet menu.
+Workflow:
+
+1. The user selects a packet in Wireshark.
 2. The Lua helper sends packet context to the Python receiver.
 3. The receiver opens a browser session for that packet.
-4. The browser UI asks the user to choose a configured AI backend.
-5. After backend selection, the app shows the target packet, explains how to use rule-based vs AI-assisted replies, and suggests next actions.
-6. The user keeps asking questions until they get the filter or explanation they need.
+4. The browser asks the user to choose a configured AI backend.
+5. The user works from suggested actions, packet explanations, and generated filters until they get the view they need.
 
-The app is intentionally split into two modes:
+The app keeps rule-based behavior as the default path for normal questions. AI is only used when the user explicitly asks for it with `+AI` or a provider suffix like `+Claude`.
 
-- Rule-based mode for fast, deterministic packet explanations and display-filter generation
-- AI-assisted mode for deeper packet analysis when the user explicitly asks for it with `+AI` or a provider suffix like `+Claude`
+The default AI prompt profile is `specialist`, which combines packet-analysis depth with incident-response triage thinking.
 
-## What It Does
+## Setup
 
-- Launches from Wireshark through a Lua plugin
-- Captures packet context such as frame number, IPs, MACs, ports, DNS name, HTTP host, and current display filter
-- Creates a browser-based chat session for the selected packet
-- Lets the user choose a background AI backend from only the providers that are actually configured
-- Keeps rule-based logic as the default for normal questions
-- Uses AI only when explicitly requested with:
-  - `+AI`
-  - `+OpenAI`
-  - `+Claude`
-  - `+Gemini`
-  - `+Ollama`
-- Builds common Wireshark display filters from packet context
-- Falls back to rule-based answers if a live AI request fails
-
-## Repository Layout
-
-```text
-core/
-  config.py
-  providers/
-receiver_app.py
-smart_filter.lua
-templates/
-static/
-config.toml
-config.toml.example
-requirements.txt
-```
-
-## Requirements
+### Requirements
 
 - Python 3.11 or newer
 - Wireshark with Lua enabled
-- `curl` available on the machine running Wireshark
-- A browser on the machine running Wireshark
+- `curl` on the machine running Wireshark
+- a browser on the machine running Wireshark
 
 Optional:
 
@@ -63,7 +34,7 @@ Optional:
 - Gemini API key
 - Ollama running locally or remotely
 
-## Python Setup
+### Python Receiver
 
 From the project directory:
 
@@ -72,18 +43,17 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp config.toml.example config.toml
-python receiver_app.py
 ```
 
 The receiver reads `config.toml` from the current directory by default.
 
-You can point to a different config file:
+To use a different config file:
 
 ```bash
 SMART_FILTER_CONFIG=/path/to/config.toml python receiver_app.py
 ```
 
-## Receiver Configuration
+### Receiver Configuration
 
 Example `config.toml`:
 
@@ -97,6 +67,14 @@ port = 8765
 [defaults]
 provider = "rule_based"
 model = "builtin"
+
+[assistant]
+profile = "specialist"
+name = "SharkBot"
+# custom_instructions = """
+# Prioritize suspicious east-west traffic and give Wireshark filters on their own lines.
+# """
+# prompt_file = "assistant_prompt.txt"
 
 [providers.openai]
 api_key = ""
@@ -114,39 +92,112 @@ base_url = "http://127.0.0.1:11434"
 timeout_seconds = 45
 ```
 
-### Receiver Settings
+Receiver keys:
 
 - `host`: legacy/default receiver host value
-- `bind_host`: actual interface Flask should listen on
+- `bind_host`: interface Flask should listen on
 - `public_base_url`: URL the Wireshark machine should open in its browser
 - `port`: receiver port
 
-### Defaults
-
-- `provider`: startup backend for the session state
-- `model`: startup model for that provider
-
 If the configured default provider is unavailable, the app falls back to `rule_based`.
 
-## Local Setup
+### Assistant Profiles
 
-For a local setup where Wireshark and the receiver run on the same machine, the default config is usually enough:
+Supported built-in profiles:
+
+- `specialist`: packet analyst plus incident-response triage
+- `packet_analyst`: narrower packet/protocol interpretation focus
+- `incident_response`: incident scoping, compromise indicators, and containment-oriented guidance
+
+Optional prompt tuning:
+
+- `name`: assistant name used in the AI priming instructions
+- `custom_instructions`: inline local guidance appended to the built-in profile
+- `prompt_file`: path to a text file with longer custom instructions
+
+### AI Provider Setup
+
+OpenAI:
 
 ```toml
-[receiver]
-host = "127.0.0.1"
-port = 8765
+[providers.openai]
+api_key = "YOUR_OPENAI_KEY"
 ```
 
-And in the Lua plugin:
+Anthropic:
+
+```toml
+[providers.anthropic]
+api_key = "YOUR_ANTHROPIC_KEY"
+```
+
+Gemini:
+
+```toml
+[providers.gemini]
+api_key = "YOUR_GEMINI_KEY"
+```
+
+Ollama:
+
+```toml
+[providers.ollama]
+base_url = "http://127.0.0.1:11434"
+```
+
+If you use Ollama locally:
+
+```bash
+ollama pull llama3.1
+```
+
+### Wireshark Lua Client
+
+Copy [smart_filter.lua](/mnt/usb/sharkbot/smart_filter.lua:1) into a Wireshark Lua plugin directory and restart Wireshark.
+
+Common notes:
+
+- macOS app-bundle testing often uses `/Applications/Wireshark.app/Contents/PlugIns/wireshark/`
+- personal plugin directories vary by OS and install method
+
+At the top of the Lua file:
 
 ```lua
 local RECEIVER_BASE = os.getenv("SMART_FILTER_RECEIVER") or "http://127.0.0.1:8765"
 ```
 
-## Remote / Headless Receiver Setup
+You can either:
 
-For a receiver running on a remote headless box, separate the bind address from the browser URL:
+- edit `RECEIVER_BASE` directly
+- or set `SMART_FILTER_RECEIVER` in the Wireshark launch environment
+
+Remote receiver note:
+
+- do not use `0.0.0.0` in the Lua client
+- use a real reachable URL such as `http://192.168.1.50:8765`
+
+The Lua client posts packet context to `/api/session`, receives `session_id` plus `web_url`, and opens the returned browser URL.
+
+## Run
+
+### Local
+
+```bash
+source .venv/bin/activate
+python receiver_app.py
+```
+
+The receiver starts on the configured host and port. Debug mode is off by default.
+
+If you explicitly want Flask debug mode while developing:
+
+```bash
+python receiver_app.py --debug
+```
+
+### Remote / Headless Receiver
+
+Use separate bind and browser-facing addresses:
 
 ```toml
 [receiver]
@@ -158,109 +209,38 @@ port = 8765
 
 Important:
 
-- `bind_host = "0.0.0.0"` allows the receiver to listen on the network
+- `bind_host = "0.0.0.0"` is for listening, not for the client URL
 - `public_base_url` must be reachable from the Wireshark machine
-- the Lua client must point to that same reachable receiver
-- do not use `0.0.0.0` as the Lua client URL
+- the Lua client must point to the same reachable receiver
 
-Example Lua receiver setting for a remote receiver:
+### Basic Checks
 
-```lua
-local RECEIVER_BASE = os.getenv("SMART_FILTER_RECEIVER") or "http://192.168.1.50:8765"
-```
-
-## AI Provider Setup
-
-### OpenAI
-
-```toml
-[providers.openai]
-api_key = "YOUR_OPENAI_KEY"
-```
-
-### Anthropic
-
-```toml
-[providers.anthropic]
-api_key = "YOUR_ANTHROPIC_KEY"
-```
-
-### Gemini
-
-```toml
-[providers.gemini]
-api_key = "YOUR_GEMINI_KEY"
-```
-
-### Ollama
-
-```toml
-[providers.ollama]
-base_url = "http://127.0.0.1:11434"
-```
-
-If you use Ollama locally, start it and pull at least one model:
+Useful quick checks:
 
 ```bash
-ollama pull llama3.1
+python3 -m py_compile receiver_app.py core/config.py core/providers/*.py
+curl -sS http://127.0.0.1:8765/api/providers
 ```
 
-## Installing the Lua Client
+## Usage
 
-Copy `smart_filter.lua` into a Wireshark Lua plugin directory.
+### Session Flow
 
-Common locations:
-
-- macOS app bundle testing:
-  - `/Applications/Wireshark.app/Contents/PlugIns/wireshark/`
-- Personal plugin directories depend on OS and Wireshark install style
-
-If you are unsure where Wireshark loads Lua plugins from, check Wireshark preferences and Lua/plugin paths on your system.
-
-After copying the file, restart Wireshark.
-
-### Lua Client Notes
-
-At the top of [smart_filter.lua](/mnt/usb/sharkbot/smart_filter.lua:1):
-
-```lua
-local RECEIVER_BASE = os.getenv("SMART_FILTER_RECEIVER") or "http://127.0.0.1:8765"
-```
-
-You can either:
-
-- edit `RECEIVER_BASE` directly
-- or set `SMART_FILTER_RECEIVER` in the Wireshark launch environment
-
-The Lua client:
-
-- posts packet context to `/api/session`
-- receives `session_id` and `web_url`
-- opens the returned browser URL
-- falls back to `RECEIVER_BASE/session/<id>` if the returned URL is unusable
-
-## Running the System
-
-1. Start the Python receiver.
+1. Start the receiver.
 2. Open Wireshark.
 3. Select a packet.
 4. Right-click the packet and choose `Smart Filter Assistant`.
-5. The Lua client sends packet context to the receiver and opens a browser session.
-6. In the browser, choose the AI backend you want to keep available for `+AI`.
-7. Ask questions or click suggestions until you get the explanation or filter you need.
+5. Let the Lua helper open the browser session.
+6. Choose a configured AI backend in the browser.
+7. Ask questions or click suggested actions until you get the explanation or filter you need.
 
-## Chat Behavior
+### Chat Behavior
 
-The app currently behaves like this:
-
-- If one or more AI backends are configured, the chat stays locked until the user selects a backend for the session
-- After backend selection, the app shows:
-  - `AI backend ready: ...`
-  - usage guidance for rule-based vs AI-assisted replies
-  - the packet summary card
-  - suggested next steps
-- Normal questions still default to rule-based logic
-- AI is used only when the prompt explicitly ends with `+AI` or a provider suffix
+- if one or more AI backends are configured, the chat stays locked until the user confirms one backend
+- after backend selection, the UI shows the AI-ready notice, usage guidance, the target packet card, and suggested next steps
+- normal questions still default to rule-based logic
+- AI is used only for prompts ending in `+AI`, `+OpenAI`, `+Claude`, `+Gemini`, or `+Ollama`
+- if a live AI call fails, the app falls back to rule-based output and labels that clearly
 
 Examples:
 
@@ -269,86 +249,78 @@ Explain this packet
 Explain this packet +AI
 Explain this packet +Claude
 Show all traffic involving this IP
+Show related traffic
 Show DNS traffic except mDNS
 ```
 
-## Rule-Based vs AI-Assisted
+### UI Notes
 
-### Rule-based
+- the packet card is visually separated from normal chat messages
+- AI-assisted, rule-based, system, and packet labels use different colors
+- filter expressions are highlighted so they stand out in both light and dark themes
+- stale or expired session URLs return a friendly `Session not found` page instead of a traceback
 
-Used by default for:
+### Troubleshooting
 
-- straightforward packet explanations
-- common filter generation
-- packet-context suggestions
+Browser does not open:
 
-### AI-assisted
+- confirm `curl` is installed on the Wireshark machine
+- confirm the receiver is running
+- verify `RECEIVER_BASE` in the Lua client
 
-Used only for the current message when the user asks for it explicitly:
+Wireshark cannot connect to the receiver:
 
-- `+AI` uses the selected backend
-- `+OpenAI`, `+Claude`, `+Gemini`, `+Ollama` force a specific backend
-
-If the AI request fails, the UI labels the response as fallback and shows the rule-based answer instead.
-
-## UI Notes
-
-The browser UI currently includes:
-
-- theme switcher
-- packet context card in the sidebar
-- backend onboarding card in chat
-- colored response labels for:
-  - system
-  - packet
-  - AI-assisted answers
-  - rule-based answers
-  - fallback/error states
-- highlighted filter snippets in AI explanations
-
-## Troubleshooting
-
-### The browser does not open
-
-- make sure `curl` is installed on the Wireshark machine
-- make sure the receiver is running
-- verify `RECEIVER_BASE` in `smart_filter.lua`
-- for remote receivers, confirm the receiver is reachable from the Wireshark machine
-
-### Wireshark can launch the plugin but cannot connect
-
-- check that the receiver is listening on the right interface
-- for remote setups, use `bind_host = "0.0.0.0"`
-- verify firewalls and routing
+- check `bind_host`
+- verify firewall and routing
 - make sure the Lua URL is a real reachable host, not `0.0.0.0`
 
-### The wrong browser URL opens
+Wrong browser URL opens:
 
-- set `public_base_url` in `config.toml`
-- make sure it matches the URL that should open on the Wireshark machine
+- set `public_base_url`
+- make sure it matches the URL the Wireshark machine should open
 
-### The chat says to set the background AI backend first
+AI provider does not work:
 
-- that is expected when at least one AI provider is configured
-- choose a backend in the onboarding card to unlock the session
-
-### An AI provider does not work
-
-- confirm its key is present in `config.toml`
-- confirm the selected model name is valid for that provider
+- confirm the key exists in `config.toml`
+- confirm the selected model is valid for that provider
 - confirm outbound network access is available
-- for Ollama, confirm the base URL is correct and Ollama is running
-- restart the receiver after editing config
+- for Ollama, confirm the base URL is correct and the model is pulled
 
-## Security Notes
+### Security Notes
 
 - `config.toml` may contain API keys
-- do not commit real keys to a public repository
-- prefer using environment-specific config handling if you deploy this beyond local/private use
+- do not commit live keys to a public repository
+- for service deployments, prefer a dedicated system user and locked-down file permissions
 
-## Development Notes
+## Systemd
 
-- The receiver is a Flask app in [receiver_app.py](/mnt/usb/sharkbot/receiver_app.py:1)
-- Provider integrations live under [core/providers](/mnt/usb/sharkbot/core/providers/__init__.py:1)
-- The browser UI lives in [templates/index.html](/mnt/usb/sharkbot/templates/index.html:1), [static/js/app.js](/mnt/usb/sharkbot/static/js/app.js:1), and [static/css/app.css](/mnt/usb/sharkbot/static/css/app.css:1)
-- The Wireshark entry point is [smart_filter.lua](/mnt/usb/sharkbot/smart_filter.lua:1)
+A sample unit file is included at [deploy/systemd/sharkbot.service](/mnt/usb/sharkbot/deploy/systemd/sharkbot.service:1).
+
+The sample assumes:
+
+- the app is installed at `/opt/sharkbot`
+- the virtual environment is at `/opt/sharkbot/.venv`
+- the runtime config is `/opt/sharkbot/config.toml`
+- the service runs as user `sharkbot`
+
+Adjust those paths and the user before installing it.
+
+Install steps:
+
+```bash
+sudo cp deploy/systemd/sharkbot.service /etc/systemd/system/sharkbot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now sharkbot.service
+sudo systemctl status sharkbot.service
+```
+
+After editing the unit:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart sharkbot.service
+```
+
+## Change Log
+
+Project history is tracked in [CHANGELOG.md](/mnt/usb/sharkbot/CHANGELOG.md:1).

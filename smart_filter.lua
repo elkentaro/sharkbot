@@ -1,4 +1,4 @@
--- smart_filter.lua - v0.2 launcher with real packet context when launched from packet menu
+-- smart_filter.lua - SharkBot v1.5.0 Wireshark launcher with packet-context handoff
 --
 -- Receiver config:
 -- Edit RECEIVER_BASE below to point at your receiver.

@@ -1,0 +1,18 @@
+[Unit]
+Description=SharkBot Wireshark Receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sharkbot
+Group=sharkbot
+WorkingDirectory=/opt/sharkbot
+Environment=PYTHONUNBUFFERED=1
+Environment=SMART_FILTER_CONFIG=/opt/sharkbot/config.toml
+ExecStart=/opt/sharkbot/.venv/bin/python /opt/sharkbot/receiver_app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

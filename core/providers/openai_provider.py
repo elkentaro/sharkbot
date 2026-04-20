@@ -26,7 +26,8 @@ class OpenAIProvider(AIProvider):
         if not self.available():
             return self._fallback.explain_packet(context, user_text, model)
         chosen_model = model or self.models[0]
-        prompt = self.build_explanation_prompt(context, user_text)
+        system_prompt = self.build_system_prompt()
+        user_prompt = self.build_user_prompt(context, user_text)
         try:
             resp = requests.post(
                 f"{self._base_url.rstrip('/')}/responses",
@@ -36,7 +37,8 @@ class OpenAIProvider(AIProvider):
                 },
                 json={
                     "model": chosen_model,
-                    "input": prompt,
+                    "instructions": system_prompt,
+                    "input": user_prompt,
                 },
                 timeout=self._timeout,
             )

@@ -29,9 +29,10 @@ class AnthropicProvider(AIProvider):
         if not self.available():
             return self._fallback.explain_packet(context, user_text, model)
         chosen_model = model or self.models[0]
-        prompt = self.build_explanation_prompt(context, user_text)
+        system_prompt = self.build_system_prompt()
+        user_prompt = self.build_user_prompt(context, user_text)
         try:
-            resp = self._request_with_retries(prompt, chosen_model)
+            resp = self._request_with_retries(system_prompt, user_prompt, chosen_model)
             data = resp.json()
             text = self._extract_text(data)
             if not text:
@@ -46,7 +47,7 @@ class AnthropicProvider(AIProvider):
     def suggest_actions(self, context: Dict[str, str]) -> List[Dict[str, str]]:
         return self._fallback.suggest_actions(context)
 
-    def _request_with_retries(self, prompt: str, model: str) -> requests.Response:
+    def _request_with_retries(self, system_prompt: str, user_prompt: str, model: str) -> requests.Response:
         last_response: requests.Response | None = None
         for attempt in range(self._max_retries + 1):
             resp = requests.post(
@@ -59,7 +60,8 @@ class AnthropicProvider(AIProvider):
                 json={
                     "model": model,
                     "max_tokens": 700,
-                    "messages": [{"role": "user", "content": prompt}],
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": user_prompt}],
                 },
                 timeout=self._timeout,
             )
