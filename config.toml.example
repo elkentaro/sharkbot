@@ -1,0 +1,26 @@
+[receiver]
+host = "127.0.0.1"
+# Optional: bind to all interfaces for remote Wireshark clients.
+# bind_host = "0.0.0.0"
+# Optional: the URL the Wireshark client browser should open.
+# public_base_url = "http://192.168.1.50:8765"
+port = 8765
+
+[defaults]
+provider = "rule_based"
+model = "builtin"
+
+[providers.openai]
+api_key = ""
+
+[providers.anthropic]
+api_key = ""
+
+[providers.gemini]
+api_key = ""
+
+[providers.ollama]
+base_url = "http://127.0.0.1:11434"
+
+[advanced]
+timeout_seconds = 45

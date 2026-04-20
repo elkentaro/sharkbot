@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Filter Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+  </head>
+  <body data-session-id="{{ session_id }}">
+    <main class="shell">
+      <aside class="sidebar">
+        <h1>Smart Filter</h1>
+        <p class="subtitle">Wireshark packet + filter assistant</p>
+        <div class="brand-version">Version v1.0.3</div>
+
+        <section class="card packet-context-card">
+          <div class="card-title">Selected packet</div>
+          <pre id="contextBox" class="context-box"></pre>
+        </section>
+
+        <section class="card hidden-backend-controls" aria-hidden="true">
+          <div class="card-title">Hidden backend controls</div>
+          <label class="field-label" for="providerSelect">Provider</label>
+          <select id="providerSelect">
+            <option value="rule_based">Rule-Based</option>
+          </select>
+          <label class="field-label" for="modelSelect">Model</label>
+          <select id="modelSelect">
+            <option value="builtin">Builtin</option>
+          </select>
+          <button type="button" id="saveSettingsBtn" class="secondary">Use this backend</button>
+        </section>
+
+</aside>
+
+      <section class="chat-panel">
+        <header class="chat-header">
+          <div>Session <span id="sessionTitle">{{ session_id }}</span></div>
+          <div class="topbar-actions">
+            <label class="topbar-theme-label" for="themeSelect">Theme</label>
+            <select id="themeSelect" class="topbar-theme-select">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+            <button type="button" id="clearBtn" class="secondary">Clear</button>
+          </div>
+        </header>
+        <div id="messages" class="messages"></div>
+        <form id="composer" class="composer">
+          <input id="prompt" type="text" autocomplete="off" placeholder="Ask about this packet or ask for a Wireshark display filter..." />
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  </body>
+</html>
