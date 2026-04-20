@@ -50,6 +50,9 @@ COMMON_NOISE = {
 }
 
 PROTOCOL_MAP = {
+    "ip": "ip",
+    "ipv4": "ip",
+    "ipv6": "ipv6",
     "dns": "dns",
     "http": "http",
     "tls": "tls",
@@ -222,6 +225,8 @@ def session_missing_payload(session_id: str) -> Dict[str, str]:
 def detect_protocols(text: str) -> List[str]:
     found = []
     for word, expr in PROTOCOL_MAP.items():
+        if word in {"ip", "ipv4"} and re.search(r"\bthis ip\b", text):
+            continue
         if re.search(rf"\b{re.escape(word)}\b", text):
             found.append(expr)
     return found
@@ -241,7 +246,20 @@ def extract_noise(text: str) -> Optional[str]:
 
 
 def has_host_reference(text: str) -> bool:
-    return any(k in text for k in ["this host", "this device", "this mac", "this ip", "related to this", "involving this", "this source"])
+    return any(
+        k in text
+        for k in [
+            "this host",
+            "this device",
+            "this mac",
+            "this ip",
+            "related to this",
+            "involving this",
+            "this source",
+            "related traffic",
+            "related conversation",
+        ]
+    )
 
 
 def classify_direction(text: str) -> Optional[str]:
@@ -301,7 +319,12 @@ def guided_next_steps(state: SessionState) -> List[Dict[str, str]]:
         steps.append({"id": label.lower().replace(" ", "_"), "label": label, "prompt": prompt})
 
     add("Explain this packet", "Explain this packet")
-    add("Show related traffic", "Show related traffic")
+    if ip:
+        add("Show related traffic", "Show all traffic involving this IP")
+    elif mac:
+        add("Show related traffic", "Show all traffic involving this MAC")
+    else:
+        add("Show related traffic", "Show traffic related to this host")
     if ip:
         add("Show all traffic involving this IP", "Show all traffic involving this IP")
     if mac:
@@ -333,12 +356,50 @@ def guided_next_steps(state: SessionState) -> List[Dict[str, str]]:
     deduped = []
     seen = set()
     for item in steps:
-        key = (item["label"], item["prompt"])
+        key = item["prompt"]
         if key in seen:
             continue
         seen.add(key)
         deduped.append(item)
     return deduped[:6]
+
+
+def auto_ai_provider_for_failure(state: SessionState) -> Optional[str]:
+    selected_provider = state.settings.get("provider", "rule_based")
+    if selected_provider != "rule_based":
+        provider = PROVIDERS.get(selected_provider)
+        if provider and provider.available():
+            return selected_provider
+    configured = available_ai_provider_ids()
+    return configured[0] if configured else None
+
+
+def contextual_refinement_hint(state: SessionState, original_text: str) -> str:
+    text = normalize(original_text)
+    selected_ip = state.context.get("selected_ip") or state.context.get("selected_ipv6")
+    selected_mac = state.context.get("selected_mac")
+    current_filter = state.context.get("current_filter")
+
+    if "related traffic" in text or "related conversation" in text:
+        if selected_ip:
+            return "Show all traffic involving this IP"
+        if selected_mac:
+            return "Show all traffic involving this MAC"
+    if "only ipv6" in text:
+        if selected_ip:
+            return "Show all IPv6 traffic involving this IP"
+        return "Show only IPv6 traffic"
+    if "only ip" in text or "only ipv4" in text:
+        if selected_ip:
+            return "Show all IPv4 traffic involving this IP"
+        return "Show only IP traffic"
+    if "current filter" in text and current_filter:
+        return "Explain this packet in the context of the current filter"
+    if selected_ip:
+        return "Show all traffic involving this IP"
+    if selected_mac:
+        return "Show all traffic involving this MAC"
+    return ""
 
 
 def resolve_ai_provider_for_text(state: SessionState, user_text: str) -> tuple[str, bool]:
@@ -364,29 +425,49 @@ def chosen_model_for_provider(state: SessionState, provider_id: str) -> str:
 
 def explain_filter_limit(state: SessionState, original_text: str, reason: str, technical: bool = False) -> Dict[str, Any]:
     selected_provider, explicit_ai = resolve_ai_provider_for_text(state, original_text)
-    provider = PROVIDERS.get(selected_provider, PROVIDERS["rule_based"])
-    can_use_ai = explicit_ai and selected_provider != "rule_based" and provider.available()
+    auto_provider = auto_ai_provider_for_failure(state)
+    provider_id: Optional[str] = None
 
-    if can_use_ai:
+    if explicit_ai and selected_provider != "rule_based":
+        provider = PROVIDERS.get(selected_provider)
+        if provider and provider.available():
+            provider_id = selected_provider
+    elif auto_provider:
+        provider_id = auto_provider
+
+    if provider_id:
         cleaned_text, _, _ = parse_ai_override(original_text)
-        chosen_model = chosen_model_for_provider(state, selected_provider)
+        provider = PROVIDERS[provider_id]
+        chosen_model = chosen_model_for_provider(state, provider_id)
         guidance_prompt = (
-            "Explain to the user why the rule-based Wireshark helper could not safely complete this filter request. "
-            "Be practical and concise. Mention the limitation clearly, then suggest the next best concrete actions.\n\n"
+            "The built-in Wireshark rule helper could not safely complete this request from deterministic logic alone. "
+            "Try to fulfill the user's request directly using the provided packet context. "
+            "If you can provide a safe explanation or Wireshark display filter, do that. "
+            "If the request is still too ambiguous, explain exactly why and ask for the minimum additional context needed.\n\n"
             f"User request: {cleaned_text}\n"
             f"Reason: {reason}"
         )
         result = provider.explain_packet(state.context, guidance_prompt, chosen_model)
         response_source = "ai" if result.meta.get("live", False) else "fallback"
+        mode = "explicitly requested" if explicit_ai else "automatically used"
         source_note = (
-            f"AI-assisted guidance using {provider.display_name} to explain a rule-based limitation."
+            f"Rule-based logic could not safely complete this request, so {provider.display_name} was {mode}."
             if response_source == "ai"
-            else f"AI guidance was attempted with {provider.display_name}, but it fell back to rule-based guidance."
+            else f"Rule-based logic could not safely complete this request, and {provider.display_name} did not complete the AI fallback."
         )
+        fallback_text = (
+            "I couldn't safely complete that request with built-in rules, and the AI fallback did not complete it either."
+            f"\n\nWhy: {reason}"
+        )
+        refinement = contextual_refinement_hint(state, original_text)
+        if refinement:
+            fallback_text += f"\n\nTry this instead: {refinement}"
+        if guided_next_steps(state):
+            fallback_text += "\n\nUse one of the suggested actions below, or refine the request with a specific protocol, address, direction, port, or exclusion."
         return {
             "type": "explanation",
-            "title": "Guidance",
-            "text": result.text,
+            "title": "AI fallback response" if response_source == "ai" else "Unable to complete request",
+            "text": result.text if response_source == "ai" else fallback_text,
             "provider": result.meta.get("provider"),
             "model": result.meta.get("model"),
             "response_source": response_source,
@@ -394,20 +475,26 @@ def explain_filter_limit(state: SessionState, original_text: str, reason: str, t
             "suggested_actions": guided_next_steps(state),
         }
 
-    intro = "I can help with that, but I need a bit more to build the filter safely." if not technical else "I can explain why that did not work with the built-in filter logic."
-    body = f"{intro}\n\nWhy: {reason}\n\nNext best steps:"
+    intro = (
+        "I couldn't safely complete that request with built-in rules."
+        if not technical
+        else "I couldn't complete that request with the built-in filter logic."
+    )
+    body = f"{intro}\n\nWhy: {reason}"
     steps = guided_next_steps(state)
+    refinement = contextual_refinement_hint(state, original_text)
+    if refinement:
+        body += f"\n\nTry this instead: {refinement}"
     if steps:
-        bullet_lines = [f"- {item['label']}" for item in steps]
-        body += "\n" + "\n".join(bullet_lines)
+        body += "\n\nUse one of the suggested actions below, or refine the request with a specific protocol, address, direction, port, or exclusion."
     message = {
         "type": "explanation",
-        "title": "Guidance",
+        "title": "Unable to complete request",
         "text": body,
         "provider": "rule_based",
         "model": "builtin",
         "response_source": "rule_based",
-        "source_note": "This guidance was generated by built-in rule-based logic.",
+        "source_note": "No configured AI backend was available for automatic fallback.",
         "suggested_actions": steps,
     }
     return message
@@ -587,10 +674,10 @@ def maybe_make_clarification(state: SessionState, text: str) -> Optional[Dict[st
 
 def classify_user_text(text: str) -> str:
     t = normalize(text)
-    if any(k in t for k in ["show", "filter", "exclude", "only", "find", "traffic"]):
-        return "filter"
     if any(k in t for k in ["explain", "what is this packet", "what is this", "why is this", "summarize", "summary"]):
         return "explain"
+    if any(k in t for k in ["show", "filter", "exclude", "only", "find", "traffic"]):
+        return "filter"
     return "hybrid"
 
 

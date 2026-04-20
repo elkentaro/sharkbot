@@ -35,7 +35,8 @@ api_key = ""
 api_key = ""
 
 [providers.ollama]
-base_url = "http://127.0.0.1:11434"
+# Uncomment if you want Ollama available in the UI and for automatic fallback.
+# base_url = "http://127.0.0.1:11434"
 
 [advanced]
 timeout_seconds = 45

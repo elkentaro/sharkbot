@@ -16,13 +16,15 @@ class OllamaProvider(AIProvider):
 
     def __init__(self) -> None:
         self._fallback = RuleBasedProvider()
-        self._base_url = os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "http://127.0.0.1:11434"
+        self._base_url = (os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or "").rstrip("/")
         self._timeout = float(os.getenv("SMART_FILTER_PROVIDER_TIMEOUT", "60"))
 
     def available(self) -> bool:
         return bool(self._base_url)
 
     def explain_packet(self, context: Dict[str, Any], user_text: str, model: str | None = None) -> ProviderResult:
+        if not self.available():
+            return self._fallback.explain_packet(context, user_text, model)
         chosen_model = model or self.models[0]
         system_prompt = self.build_system_prompt()
         user_prompt = self.build_user_prompt(context, user_text)
