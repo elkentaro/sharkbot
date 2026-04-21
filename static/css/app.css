@@ -144,44 +144,66 @@ button:hover { filter: brightness(1.07); }
   font-size: .78rem;
   font-weight: 800;
   color: var(--text);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   padding: 5px 11px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.22);
   background: rgba(255,255,255,0.14);
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 6px 14px rgba(0,0,0,0.16);
+  box-shadow: none;
+}
+.label-user-text {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 .label-system {
   color: var(--system-ink);
   border-color: rgba(126, 140, 255, 0.7);
-  background: linear-gradient(180deg, rgba(126, 140, 255, 0.96), rgba(96, 110, 238, 0.92));
+  background: rgba(96, 110, 238, 0.92);
 }
 .label-assistant {
   color: var(--assistant-ink);
   border-color: rgba(110, 168, 254, 0.75);
-  background: linear-gradient(180deg, rgba(43, 127, 255, 0.98), rgba(22, 102, 229, 0.94));
+  background: rgba(22, 102, 229, 0.94);
 }
 .label-packet {
   color: var(--packet-ink);
   border-color: rgba(94, 177, 255, 0.78);
-  background: linear-gradient(180deg, rgba(36, 155, 255, 0.98), rgba(15, 110, 216, 0.94));
+  background: rgba(15, 110, 216, 0.94);
 }
 .label-ai {
   color: var(--ai-ink);
   border-color: rgba(24, 182, 164, 0.78);
-  background: linear-gradient(180deg, rgba(24, 182, 164, 0.98), rgba(10, 142, 129, 0.94));
+  background: rgba(10, 142, 129, 0.94);
 }
 .label-rule {
   color: var(--rule-ink);
   border-color: rgba(242, 184, 75, 0.88);
-  background: linear-gradient(180deg, rgba(255, 203, 90, 0.98), rgba(242, 184, 75, 0.94));
+  background: rgba(242, 184, 75, 0.94);
 }
 .label-error {
   color: var(--error-ink);
   border-color: rgba(255, 128, 144, 0.82);
-  background: linear-gradient(180deg, rgba(214, 74, 100, 0.98), rgba(180, 49, 77, 0.94));
+  background: rgba(180, 49, 77, 0.94);
+}
+.message-title {
+  display: block;
+  margin: 0 0 8px;
+  font-weight: 800;
+  color: var(--text);
+}
+.message-body {
+  display: block;
+  color: var(--text);
+}
+.message-body-multiline {
+  white-space: pre-line;
 }
 .msg.explanation .mono-block, .filter-block { margin-top: 10px; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-family: ui-monospace, SFMono-Regular, monospace; white-space: pre-wrap; }
 .option-row, .chip-column { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -331,7 +353,7 @@ button:hover { filter: brightness(1.07); }
 }
 
 .typing-dots {
-  margin-top: 8px;
+  margin-top: 2px;
   display: inline-flex;
   gap: 6px;
   font-size: 1.4rem;
@@ -490,7 +512,7 @@ button:hover { filter: brightness(1.07); }
 
 .backend-card-title {
   font-weight: 700;
-  margin-top: 4px;
+  margin-top: 0;
   margin-bottom: 8px;
   color: var(--text);
 }

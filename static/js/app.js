@@ -94,16 +94,47 @@ function escapeHtml(text) {
     .replaceAll('>', '&gt;');
 }
 
+function appendMessageLabel(wrapper, text, className = 'label', options = {}) {
+  const label = document.createElement(options.tagName || 'span');
+  label.className = className;
+  label.textContent = text;
+  wrapper.appendChild(label);
+  return label;
+}
+
+function appendMessageTitle(wrapper, text) {
+  if (!text) return null;
+  const title = document.createElement('div');
+  title.className = 'message-title';
+  title.textContent = text;
+  wrapper.appendChild(title);
+  return title;
+}
+
+function appendMessageBody(wrapper, text, className = 'message-body') {
+  if (!text) return null;
+  const body = document.createElement('div');
+  body.className = className;
+  body.textContent = text;
+  wrapper.appendChild(body);
+  return body;
+}
+
 
 function appendOptimisticExchange(text) {
   const userBubble = document.createElement('div');
   userBubble.className = 'msg user_message optimistic-user';
-  userBubble.innerHTML = `<span class="label">You</span>${escapeHtml(text)}`;
+  appendMessageLabel(userBubble, 'YOU:', 'label-user-text');
+  appendMessageBody(userBubble, text);
   messagesEl.appendChild(userBubble);
 
   const assistantBubble = document.createElement('div');
   assistantBubble.className = 'msg assistant_text typing-indicator optimistic-assistant';
-  assistantBubble.innerHTML = `<span class="label">Assistant</span><div class="typing-dots"><span>.</span><span>.</span><span>.</span></div>`;
+  appendMessageLabel(assistantBubble, 'Assistant', 'label label-assistant');
+  const typing = document.createElement('div');
+  typing.className = 'typing-dots';
+  typing.innerHTML = '<span>.</span><span>.</span><span>.</span>';
+  assistantBubble.appendChild(typing);
   messagesEl.appendChild(assistantBubble);
 
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -408,21 +439,30 @@ function renderMessage(message) {
   const wrapper = document.createElement('div');
   wrapper.className = `msg ${message.type}`;
   if (message.type === 'system_notice') {
-    wrapper.innerHTML = `<span class="label label-system">System</span>${escapeHtml(message.text)}`;
+    appendMessageLabel(wrapper, 'System', 'label label-system');
+    appendMessageBody(wrapper, message.text);
   } else if (message.type === 'assistant_text') {
-    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.text)}`;
+    appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
+    appendMessageBody(wrapper, message.text);
   } else if (message.type === 'user_message' || message.type === 'user_choice') {
-    wrapper.innerHTML = `<span class="label">You</span>${escapeHtml(message.text)}`;
+    appendMessageLabel(wrapper, 'YOU:', 'label-user-text');
+    appendMessageBody(wrapper, message.text);
   } else if (message.type === 'packet_summary') {
     const s = message.summary;
-    wrapper.innerHTML = `<span class="label label-packet">Packet</span>
-      Frame ${escapeHtml(s.frame)} · ${escapeHtml(s.protocol)}<br>
-      Source: ${escapeHtml(s.source)}<br>
-      Destination: ${escapeHtml(s.destination)}<br>
-      Selected IP: ${escapeHtml(s.selected_ip)}<br>
-      Selected MAC: ${escapeHtml(s.selected_mac)}<div class="meta-line">AI backend: ${escapeHtml(message.provider)} / ${escapeHtml(message.model)}</div>`;
+    appendMessageLabel(wrapper, 'Packet', 'label label-packet');
+    appendMessageTitle(wrapper, `Frame ${s.frame} · ${s.protocol}`);
+    appendMessageBody(
+      wrapper,
+      `Source: ${s.source}\nDestination: ${s.destination}\nSelected IP: ${s.selected_ip}\nSelected MAC: ${s.selected_mac}`,
+      'message-body message-body-multiline',
+    );
+    const metaLine = document.createElement('div');
+    metaLine.className = 'meta-line';
+    metaLine.textContent = `AI backend: ${message.provider} / ${message.model}`;
+    wrapper.appendChild(metaLine);
   } else if (message.type === 'clarification') {
-    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.question)}`;
+    appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
+    appendMessageBody(wrapper, message.question);
     const row = document.createElement('div');
     row.className = 'option-row';
     message.options.forEach((option) => row.appendChild(makeChip(option.label, async () => answerClarification(option.id))));
@@ -432,7 +472,8 @@ function renderMessage(message) {
     const labelClass = message.response_source === 'fallback'
       ? 'label label-error'
       : (message.response_source === 'rule_based' ? 'label label-rule' : 'label label-ai');
-    wrapper.innerHTML = `<span class="${labelClass}">${escapeHtml(sourceLabel)}</span>${escapeHtml(message.explanation || 'Proposed filter')}`;
+    appendMessageLabel(wrapper, sourceLabel, labelClass);
+    appendMessageBody(wrapper, message.explanation || 'Proposed filter');
     const block = document.createElement('div');
     block.className = 'filter-block';
     block.textContent = message.filter;
@@ -499,7 +540,8 @@ function renderMessage(message) {
     const labelClass = message.response_source === 'fallback'
       ? 'label label-error'
       : (message.response_source === 'rule_based' ? 'label label-rule' : 'label label-ai');
-    wrapper.innerHTML = `<span class="${labelClass}">${escapeHtml(sourceMap[message.response_source] || 'Assistant')}</span>${escapeHtml(message.title || 'Packet explanation')}`;
+    appendMessageLabel(wrapper, sourceMap[message.response_source] || 'Assistant', labelClass);
+    appendMessageTitle(wrapper, message.title || 'Packet explanation');
     const block = document.createElement('div');
     block.className = 'rich-block';
     block.innerHTML = renderRichText(message.text);
@@ -530,12 +572,10 @@ function renderMessage(message) {
     meta.textContent = `Backend: ${message.provider || ''} / ${message.model || ''}`;
     wrapper.appendChild(meta);
   } else if (message.type === 'suggested_actions') {
-    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.title || 'Suggested actions')}`;
+    appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
+    appendMessageTitle(wrapper, message.title || 'Suggested actions');
     if (message.text) {
-      const body = document.createElement('div');
-      body.className = 'playbook-inline-body';
-      body.textContent = message.text;
-      wrapper.appendChild(body);
+      appendMessageBody(wrapper, message.text, 'playbook-inline-body');
     }
     const { playbookAction, remaining } = splitPlaybookAction(message.items);
     const showDedicatedPlaybookCta = /based on this analysis|back to generic guidance|continue this investigation/i.test(message.title || '');
@@ -546,11 +586,9 @@ function renderMessage(message) {
     if (remaining.length) wrapper.appendChild(row);
   } else if (message.type === 'playbook_selector') {
     wrapper.classList.add('playbook-inline-card');
-    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.title || 'Choose a playbook')}`;
-    const body = document.createElement('div');
-    body.className = 'playbook-inline-body';
-    body.textContent = message.text || 'Choose a playbook to guide the investigation.';
-    wrapper.appendChild(body);
+    appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
+    appendMessageTitle(wrapper, message.title || 'Choose a playbook');
+    appendMessageBody(wrapper, message.text || 'Choose a playbook to guide the investigation.', 'playbook-inline-body');
 
     const playbooks = message.playbooks || [];
     if (playbooks.length) {
@@ -610,9 +648,11 @@ function renderMessage(message) {
       });
     }
   } else if (message.type === 'error') {
-    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.text)}`;
+    appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
+    appendMessageBody(wrapper, message.text);
   } else {
-    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(JSON.stringify(message))}`;
+    appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
+    appendMessageBody(wrapper, JSON.stringify(message));
   }
   return wrapper;
 }
@@ -660,10 +700,7 @@ function makeBackendOnboardingCard(settings, providers) {
   const wrapper = document.createElement('div');
   wrapper.className = 'msg backend-onboarding';
 
-  const label = document.createElement('span');
-  label.className = 'label';
-  label.textContent = 'Assistant';
-  wrapper.appendChild(label);
+  appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
 
   const title = document.createElement('div');
   title.className = 'backend-card-title';
@@ -837,12 +874,17 @@ async function answerClarification(optionId) {
 
   const chosen = document.createElement('div');
   chosen.className = 'msg user_choice optimistic-user';
-  chosen.innerHTML = `<span class="label">You</span>${escapeHtml(optionId)}`;
+  appendMessageLabel(chosen, 'YOU:', 'label-user-text');
+  appendMessageBody(chosen, optionId);
   messagesEl.appendChild(chosen);
 
   const assistantBubble = document.createElement('div');
   assistantBubble.className = 'msg assistant_text typing-indicator optimistic-assistant';
-  assistantBubble.innerHTML = `<span class="label">Assistant</span><div class="typing-dots"><span>.</span><span>.</span><span>.</span></div>`;
+  appendMessageLabel(assistantBubble, 'Assistant', 'label label-assistant');
+  const typing = document.createElement('div');
+  typing.className = 'typing-dots';
+  typing.innerHTML = '<span>.</span><span>.</span><span>.</span>';
+  assistantBubble.appendChild(typing);
   messagesEl.appendChild(assistantBubble);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
@@ -900,5 +942,10 @@ if (themeSelectEl) themeSelectEl.addEventListener('change', () => applyTheme(the
 
 loadTheme();
 loadSession().catch((err) => {
-  messagesEl.innerHTML = `<div class="msg error"><span class="label">Assistant</span>${escapeHtml(String(err))}</div>`;
+  messagesEl.innerHTML = '';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg error';
+  appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
+  appendMessageBody(wrapper, String(err));
+  messagesEl.appendChild(wrapper);
 });

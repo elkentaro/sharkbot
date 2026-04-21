@@ -1,5 +1,12 @@
 # Change Log
 
+## v1.7.1 - 2026-04-21
+
+- cleaned up chat bubble spacing so labels and message text no longer run together
+- changed user message headers from pill labels to plain `YOU:` text for clearer attribution
+- switched assistant and status labels to flat pills without drop shadows
+- made assistant titles render on a new line with bold headings for playbook and next-step messages
+
 ## v1.7.0 - 2026-04-21
 
 - promoted the codebase to the `v1.7.0` release line
