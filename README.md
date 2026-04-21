@@ -4,7 +4,7 @@
 
 SharkBot is a Wireshark companion app for packet explanation and display-filter generation.
 
-Current release: `v1.6.0`
+Current release: `v1.7.0`
 
 Workflow:
 
@@ -16,7 +16,37 @@ Workflow:
 
 The app keeps rule-based behavior as the default path for normal questions. AI is only used when the user explicitly asks for it with `+AI` or a provider suffix like `+Claude`.
 
-The default AI prompt profile is `specialist`, which combines packet-analysis depth with incident-response triage thinking.
+The default AI prompt profile is `specialist`, which combines packet-analysis depth with incident-response triage thinking while acting as a training aid for developing analysts.
+
+## What SharkBot Is For
+
+SharkBot is meant to help a user work through a packet capture in Wireshark without needing to already know the next correct filter, protocol pivot, or triage step.
+
+It is designed for:
+
+- explaining the currently selected packet in plain analyst terms
+- suggesting the next safe Wireshark filter or investigation step
+- guiding a beginner through a packet-analysis workflow
+- helping a SOC L1-style analyst scope traffic before deciding whether something is normal, broken, or suspicious
+
+It is not meant to magically solve an incident from one packet. The intended workflow is iterative: inspect a packet, narrow the traffic, confirm what changed, and keep moving through the capture.
+
+## Example Scenario
+
+Example: a user opens a PCAP because a workstation had slow HTTPS connections and a few users reported timeouts.
+
+1. In Wireshark, the user selects one TCP packet from the affected host.
+2. They launch SharkBot from the packet menu.
+3. SharkBot explains what the selected packet is and suggests the next step, such as showing the TCP conversation.
+4. The user applies that filter in Wireshark and checks whether the stream shows retransmissions, duplicate ACKs, resets, or just normal traffic.
+5. The user returns to SharkBot, confirms what they applied, and follows the next guided step.
+6. If the flow stops being obvious, SharkBot can use AI to recommend and teach the next Wireshark action rather than just giving a conclusion.
+7. The user keeps narrowing scope until they can answer a basic question such as:
+   - is this one conversation or a broader host problem?
+   - is the traffic normal, noisy, misconfigured, or suspicious?
+   - what should I inspect next in the PCAP?
+
+This is the intended use model for the app: SharkBot helps the user learn the workflow while they analyze the capture.
 
 ## Setup
 
@@ -106,15 +136,21 @@ If the configured default provider is unavailable, the app falls back to `rule_b
 
 Supported built-in profiles:
 
-- `specialist`: packet analyst plus incident-response triage
-- `packet_analyst`: narrower packet/protocol interpretation focus
-- `incident_response`: incident scoping, compromise indicators, and containment-oriented guidance
+- `specialist`: training-first packet analyst plus incident-response triage
+- `packet_analyst`: training-first packet/protocol interpretation focus
+- `incident_response`: training-first incident scoping, compromise indicators, and containment-oriented guidance
 
 Optional prompt tuning:
 
 - `name`: assistant name used in the AI priming instructions
 - `custom_instructions`: inline local guidance appended to the built-in profile
 - `prompt_file`: path to a text file with longer custom instructions
+
+Keep custom prompt tuning aligned with the training-aid approach:
+
+- teach the user why a step comes next, not just the answer
+- prefer Wireshark workflows such as Follow Stream, Conversations, Endpoints, and Protocol Hierarchy when they are better learning pivots than another narrow filter
+- separate confirmed packet evidence from inference
 
 ### AI Provider Setup
 
@@ -230,7 +266,7 @@ curl -sS http://127.0.0.1:8765/api/providers
 1. Start the receiver.
 2. Open Wireshark.
 3. Select a packet.
-4. Right-click the packet and choose `Smart Filter Assistant`.
+4. Right-click the packet and choose `SharkBot: New Investigation`.
 5. Let the Lua helper open the browser session.
 6. Choose a configured AI backend in the browser.
 7. Ask questions or click suggested actions until you get the explanation or filter you need.

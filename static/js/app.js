@@ -6,16 +6,19 @@ const clearBtnEl = document.getElementById('clearBtn');
 const reconfigureAiBtnEl = document.getElementById('reconfigureAiBtn');
 const copySessionIdBtnEl = document.getElementById('copySessionIdBtn');
 const exportChatBtnEl = document.getElementById('exportChatBtn');
-const contextBoxEl = document.getElementById('contextBox');
+const playbookStatusEl = document.getElementById('playbookStatus');
 const providerSelectEl = document.getElementById('providerSelect');
 const modelSelectEl = document.getElementById('modelSelect');
 const saveSettingsBtnEl = document.getElementById('saveSettingsBtn');
 const themeSelectEl = document.getElementById('themeSelect');
 
+const PREFERRED_BACKEND_COOKIE = 'sharkbot_preferred_backend';
+
 let currentProviders = [];
 let currentSettings = null;
 let requestInFlight = false;
 let backendCardForcedOpen = false;
+let preferredBackendAutoApplied = false;
 
 function applyTheme(theme) {
   const chosen = theme === 'light' ? 'light' : 'dark';
@@ -38,6 +41,50 @@ async function getJSON(url, options = {}) {
   });
   if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`);
   return res.json();
+}
+
+function getCookie(name) {
+  const encoded = encodeURIComponent(name) + '=';
+  const parts = document.cookie.split(';');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(encoded)) {
+      return decodeURIComponent(trimmed.slice(encoded.length));
+    }
+  }
+  return '';
+}
+
+function setCookie(name, value, maxAgeSeconds) {
+  document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSeconds}; SameSite=Lax`;
+}
+
+function loadPreferredBackend() {
+  const raw = getCookie(PREFERRED_BACKEND_COOKIE);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.provider !== 'string' || typeof parsed.model !== 'string') return null;
+    return { provider: parsed.provider, model: parsed.model };
+  } catch (err) {
+    return null;
+  }
+}
+
+function savePreferredBackend(provider, model) {
+  if (!provider || provider === 'rule_based') return;
+  setCookie(PREFERRED_BACKEND_COOKIE, JSON.stringify({ provider, model }), 60 * 60 * 24 * 180);
+}
+
+function resolvePreferredBackend(state) {
+  const preferred = loadPreferredBackend();
+  if (!preferred) return null;
+  const provider = (state?.providers || []).find((item) => item.id === preferred.provider && item.id !== 'rule_based' && item.available !== false);
+  if (!provider) return null;
+  const model = (provider.models || []).includes(preferred.model) ? preferred.model : (provider.models || [])[0];
+  if (!model) return null;
+  return { provider: provider.id, model };
 }
 
 function escapeHtml(text) {
@@ -145,16 +192,7 @@ function renderRichText(text) {
 }
 
 function renderContext(context) {
-  const lines = [
-    `Frame: ${context.frame_number || '(none)'}`,
-    `Protocol: ${context.packet_protocol || context.protocol_hint || '(unknown)'}`,
-    `Source: ${context.ip_src || context.ipv6_src || context.eth_src || '(none)'}`,
-    `Destination: ${context.ip_dst || context.ipv6_dst || context.eth_dst || '(none)'}`,
-    `Selected IP: ${context.selected_ip || context.selected_ipv6 || '(none)'}`,
-    `Selected MAC: ${context.selected_mac || '(none)'}`,
-    `Current filter: ${context.current_filter || '(empty)'}`,
-  ];
-  contextBoxEl.textContent = lines.join('\n');
+  return context;
 }
 
 function fillProviderControls(providers, settings) {
@@ -195,8 +233,66 @@ function makeChip(label, onClick) {
   return btn;
 }
 
+function splitPlaybookAction(items) {
+  const source = Array.isArray(items) ? items : [];
+  const playbookAction = source.find((item) => item?.kind === 'playbook_open' || item?.id === 'use_playbook') || null;
+  const remaining = source.filter((item) => item !== playbookAction);
+  return { playbookAction, remaining };
+}
+
+function appendPlaybookCta(wrapper, item) {
+  if (!item) return;
+  const cta = document.createElement('div');
+  cta.className = 'playbook-cta-card';
+
+  const title = document.createElement('div');
+  title.className = 'playbook-cta-title';
+  title.textContent = 'Guided Analysis';
+  cta.appendChild(title);
+
+  const body = document.createElement('div');
+  body.className = 'playbook-cta-body';
+  body.textContent = 'Use a playbook to switch from general packet help into guided investigation steps tailored to a specific analysis style.';
+  cta.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'playbook-cta-actions';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'playbook-cta-button';
+  btn.textContent = item.label || 'Use Playbook';
+  btn.addEventListener('click', async () => runSuggestedAction(item));
+  actions.appendChild(btn);
+  cta.appendChild(actions);
+
+  wrapper.appendChild(cta);
+}
+
+function appendSourceNote(wrapper, message) {
+  if (!message?.source_note) return;
+  const row = document.createElement('div');
+  row.className = 'meta-pill-row';
+
+  const pill = document.createElement('span');
+  pill.className = message.response_source === 'fallback'
+    ? 'label label-error'
+    : (message.response_source === 'rule_based' ? 'label label-rule' : 'label label-ai');
+  pill.textContent = message.response_source === 'fallback'
+    ? 'Fallback note'
+    : (message.response_source === 'rule_based' ? 'Built-in logic' : 'AI note');
+  row.appendChild(pill);
+
+  const text = document.createElement('span');
+  text.className = 'meta-note';
+  text.textContent = message.source_note;
+  row.appendChild(text);
+  wrapper.appendChild(row);
+}
+
 async function runSuggestedAction(prompt) {
-  await sendMessage(prompt);
+  if (typeof prompt === 'string') return sendMessage(prompt);
+  const item = prompt || {};
+  return sendActionItem(item);
 }
 
 function composerShouldBeLocked(state) {
@@ -227,6 +323,40 @@ function syncHeaderActions(state) {
   reconfigureAiBtnEl.textContent = backendCardForcedOpen ? 'Close AI Setup' : 'Reconfigure AI';
 }
 
+function syncPlaybookStatus(state) {
+  if (!playbookStatusEl) return;
+  const playbook = state?.playbook;
+  if (!playbook) {
+    playbookStatusEl.hidden = true;
+    playbookStatusEl.innerHTML = '';
+    return;
+  }
+  playbookStatusEl.hidden = false;
+  playbookStatusEl.innerHTML = `
+    <div class="playbook-status-title">Playbook Active</div>
+    <div class="playbook-status-name">${escapeHtml(playbook.name || 'Guided Analysis')}</div>
+    <div class="playbook-status-desc">${escapeHtml(playbook.description || 'Guided playbook analysis is active for this investigation.')}</div>`;
+}
+
+async function maybeApplyPreferredBackend(state) {
+  if (preferredBackendAutoApplied) return state;
+  preferredBackendAutoApplied = true;
+  if (!composerShouldBeLocked(state)) return state;
+
+  const preferred = resolvePreferredBackend(state);
+  if (!preferred) return state;
+
+  try {
+    return await getJSON(`/api/session/${sessionId}/settings`, {
+      method: 'POST',
+      body: JSON.stringify(preferred),
+    });
+  } catch (err) {
+    console.error(err);
+    return state;
+  }
+}
+
 async function copySessionId() {
   try {
     await navigator.clipboard.writeText(sessionId);
@@ -246,13 +376,41 @@ function downloadInvestigation() {
   window.location.href = `/api/session/${sessionId}/export`;
 }
 
+async function sendActionItem(item) {
+  if (requestInFlight) return;
+  const action = item || {};
+  if (!action.prompt && !action.kind) return;
+
+  requestInFlight = true;
+  composerEl.classList.add('busy');
+  appendOptimisticExchange(action.label || action.prompt || 'Action');
+
+  setTimeout(async () => {
+    try {
+      const state = await getJSON(`/api/session/${sessionId}/action`, {
+        method: 'POST',
+        body: JSON.stringify(action),
+      });
+      clearOptimisticExchange();
+      renderState(state);
+    } catch (err) {
+      clearOptimisticExchange();
+      console.error(err);
+    } finally {
+      requestInFlight = false;
+      composerEl.classList.remove('busy');
+      promptEl.focus();
+    }
+  }, 0);
+}
+
 function renderMessage(message) {
   const wrapper = document.createElement('div');
   wrapper.className = `msg ${message.type}`;
   if (message.type === 'system_notice') {
     wrapper.innerHTML = `<span class="label label-system">System</span>${escapeHtml(message.text)}`;
   } else if (message.type === 'assistant_text') {
-    wrapper.innerHTML = `<span class="label">Assistant</span>${escapeHtml(message.text)}`;
+    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.text)}`;
   } else if (message.type === 'user_message' || message.type === 'user_choice') {
     wrapper.innerHTML = `<span class="label">You</span>${escapeHtml(message.text)}`;
   } else if (message.type === 'packet_summary') {
@@ -264,7 +422,7 @@ function renderMessage(message) {
       Selected IP: ${escapeHtml(s.selected_ip)}<br>
       Selected MAC: ${escapeHtml(s.selected_mac)}<div class="meta-line">AI backend: ${escapeHtml(message.provider)} / ${escapeHtml(message.model)}</div>`;
   } else if (message.type === 'clarification') {
-    wrapper.innerHTML = `<span class="label">Assistant</span>${escapeHtml(message.question)}`;
+    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.question)}`;
     const row = document.createElement('div');
     row.className = 'option-row';
     message.options.forEach((option) => row.appendChild(makeChip(option.label, async () => answerClarification(option.id))));
@@ -284,13 +442,44 @@ function renderMessage(message) {
     row.appendChild(makeChip('Copy filter', async () => {
       await navigator.clipboard.writeText(message.filter);
     }));
+    row.appendChild(makeChip('Explain filter +AI', async () => runSuggestedAction({
+      kind: 'filter_explain_ai',
+      label: 'Explain filter +AI',
+      prompt: message.filter,
+    })));
     wrapper.appendChild(row);
-    if (message.source_note) {
-      const meta = document.createElement('div');
-      meta.className = 'meta-line';
-      meta.textContent = message.source_note;
-      wrapper.appendChild(meta);
+    if (message.request_mode === 'playbook' && message.playbook) {
+      const confirm = document.createElement('div');
+      confirm.className = 'filter-confirm';
+      const confirmTitle = document.createElement('div');
+      confirmTitle.className = 'filter-confirm-title';
+      confirmTitle.textContent = `Playbook checkpoint: ${message.playbook.name}`;
+      confirm.appendChild(confirmTitle);
+
+      const confirmNote = document.createElement('div');
+      confirmNote.className = 'filter-confirm-note';
+      confirmNote.textContent = 'After you apply this filter in Wireshark, confirm it here and SharkBot will suggest the next playbook step.';
+      confirm.appendChild(confirmNote);
+
+      const noteInput = document.createElement('input');
+      noteInput.type = 'text';
+      noteInput.className = 'filter-confirm-input';
+      noteInput.placeholder = 'Optional: what did you notice after applying it?';
+      confirm.appendChild(noteInput);
+
+      const confirmActions = document.createElement('div');
+      confirmActions.className = 'option-row';
+      confirmActions.appendChild(makeChip('I applied this filter', async () => runSuggestedAction({
+        kind: 'filter_applied',
+        label: 'I applied this filter',
+        prompt: message.filter,
+        origin_prompt: message.origin_prompt || '',
+        note: noteInput.value.trim(),
+      })));
+      confirm.appendChild(confirmActions);
+      wrapper.appendChild(confirm);
     }
+    appendSourceNote(wrapper, message);
     if (message.upgrade_suggestions?.length) {
       const title = document.createElement('div');
       title.className = 'upgrade-title';
@@ -298,10 +487,13 @@ function renderMessage(message) {
       wrapper.appendChild(title);
       const upgrades = document.createElement('div');
       upgrades.className = 'option-row';
-      message.upgrade_suggestions.forEach((item) => upgrades.appendChild(makeChip(item.label, async () => runSuggestedAction(item.prompt))));
+      message.upgrade_suggestions.forEach((item) => upgrades.appendChild(makeChip(item.label, async () => runSuggestedAction(item))));
       wrapper.appendChild(upgrades);
     }
-    wrapper.innerHTML += `<div class="meta-line">Backend: ${escapeHtml(message.provider || '')} / ${escapeHtml(message.model || '')}</div>`;
+    const backendMeta = document.createElement('div');
+    backendMeta.className = 'meta-line';
+    backendMeta.textContent = `Backend: ${message.provider || ''} / ${message.model || ''}`;
+    wrapper.appendChild(backendMeta);
   } else if (message.type === 'explanation') {
     const sourceMap = { ai: 'AI-assisted answer', rule_based: 'Rule-based answer', fallback: 'AI failed, used fallback' };
     const labelClass = message.response_source === 'fallback'
@@ -312,12 +504,7 @@ function renderMessage(message) {
     block.className = 'rich-block';
     block.innerHTML = renderRichText(message.text);
     wrapper.appendChild(block);
-    if (message.source_note) {
-      const meta = document.createElement('div');
-      meta.className = 'meta-line';
-      meta.textContent = message.source_note;
-      wrapper.appendChild(meta);
-    }
+    appendSourceNote(wrapper, message);
     if (message.upgrade_suggestions?.length) {
       const title = document.createElement('div');
       title.className = 'upgrade-title';
@@ -325,7 +512,7 @@ function renderMessage(message) {
       wrapper.appendChild(title);
       const upgrades = document.createElement('div');
       upgrades.className = 'option-row';
-      message.upgrade_suggestions.forEach((item) => upgrades.appendChild(makeChip(item.label, async () => runSuggestedAction(item.prompt))));
+      message.upgrade_suggestions.forEach((item) => upgrades.appendChild(makeChip(item.label, async () => runSuggestedAction(item))));
       wrapper.appendChild(upgrades);
     }
     if (message.suggested_actions?.length) {
@@ -335,23 +522,97 @@ function renderMessage(message) {
       wrapper.appendChild(title);
       const row = document.createElement('div');
       row.className = 'option-row';
-      message.suggested_actions.forEach((item) => row.appendChild(makeChip(item.label, async () => runSuggestedAction(item.prompt))));
-      wrapper.appendChild(row);
+      message.suggested_actions.forEach((item) => row.appendChild(makeChip(item.label, async () => runSuggestedAction(item))));
+      if (message.suggested_actions.length) wrapper.appendChild(row);
     }
     const meta = document.createElement('div');
     meta.className = 'meta-line';
     meta.textContent = `Backend: ${message.provider || ''} / ${message.model || ''}`;
     wrapper.appendChild(meta);
   } else if (message.type === 'suggested_actions') {
-    wrapper.innerHTML = `<span class="label">Assistant</span>${escapeHtml(message.title || 'Suggested actions')}`;
+    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.title || 'Suggested actions')}`;
+    if (message.text) {
+      const body = document.createElement('div');
+      body.className = 'playbook-inline-body';
+      body.textContent = message.text;
+      wrapper.appendChild(body);
+    }
+    const { playbookAction, remaining } = splitPlaybookAction(message.items);
+    const showDedicatedPlaybookCta = /based on this analysis|back to generic guidance|continue this investigation/i.test(message.title || '');
+    if (showDedicatedPlaybookCta) appendPlaybookCta(wrapper, playbookAction);
     const row = document.createElement('div');
     row.className = 'option-row';
-    message.items.forEach((item) => row.appendChild(makeChip(item.label, async () => runSuggestedAction(item.prompt))));
-    wrapper.appendChild(row);
+    remaining.forEach((item) => row.appendChild(makeChip(item.label, async () => runSuggestedAction(item))));
+    if (remaining.length) wrapper.appendChild(row);
+  } else if (message.type === 'playbook_selector') {
+    wrapper.classList.add('playbook-inline-card');
+    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.title || 'Choose a playbook')}`;
+    const body = document.createElement('div');
+    body.className = 'playbook-inline-body';
+    body.textContent = message.text || 'Choose a playbook to guide the investigation.';
+    wrapper.appendChild(body);
+
+    const playbooks = message.playbooks || [];
+    if (playbooks.length) {
+      const recommendedId = message.recommended_playbook?.id || message.active_playbook?.id || playbooks[0]?.id || '';
+
+      const selectLabel = document.createElement('label');
+      selectLabel.className = 'field-label';
+      selectLabel.textContent = 'Playbook';
+      wrapper.appendChild(selectLabel);
+
+      const select = document.createElement('select');
+      select.className = 'inline-select playbook-inline-select';
+      playbooks.forEach((playbook) => {
+        const opt = document.createElement('option');
+        opt.value = playbook.id;
+        opt.textContent = playbook.name;
+        if (playbook.id === recommendedId) opt.selected = true;
+        select.appendChild(opt);
+      });
+      wrapper.appendChild(select);
+
+      const preview = playbooks.find((item) => item.id === recommendedId) || playbooks[0];
+      const summary = document.createElement('div');
+      summary.className = 'playbook-inline-body';
+      summary.textContent = preview?.description || '';
+      wrapper.appendChild(summary);
+
+      const actions = document.createElement('div');
+      actions.className = 'playbook-inline-actions';
+
+      const useBtn = document.createElement('button');
+      useBtn.type = 'button';
+      useBtn.className = 'secondary';
+      const syncSelectorControls = () => {
+        const selectedId = select.value;
+        useBtn.textContent = message.active_playbook?.id === selectedId ? 'Playbook Active' : 'Use Playbook';
+        useBtn.disabled = message.active_playbook?.id === selectedId;
+      };
+      syncSelectorControls();
+      useBtn.addEventListener('click', async () => savePlaybookSelection(select.value));
+      actions.appendChild(useBtn);
+
+      if (message.active_playbook) {
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'secondary';
+        clearBtn.textContent = 'Clear Playbook';
+        clearBtn.addEventListener('click', async () => runSuggestedAction({ kind: 'playbook_clear', label: 'Clear Playbook' }));
+        actions.appendChild(clearBtn);
+      }
+      wrapper.appendChild(actions);
+
+      select.addEventListener('change', () => {
+        const next = playbooks.find((item) => item.id === select.value);
+        summary.textContent = next?.description || '';
+        syncSelectorControls();
+      });
+    }
   } else if (message.type === 'error') {
-    wrapper.innerHTML = `<span class="label">Assistant</span>${escapeHtml(message.text)}`;
+    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(message.text)}`;
   } else {
-    wrapper.innerHTML = `<span class="label">Assistant</span>${escapeHtml(JSON.stringify(message))}`;
+    wrapper.innerHTML = `<span class="label label-assistant">Assistant</span>${escapeHtml(JSON.stringify(message))}`;
   }
   return wrapper;
 }
@@ -372,6 +633,23 @@ function providerDisplayName(providerId) {
     ollama: 'Ollama',
   };
   return map[providerId] || providerId || 'Unknown';
+}
+
+async function savePlaybookSelection(playbookId) {
+  if (!playbookId) return;
+  const state = await getJSON(`/api/session/${sessionId}/playbook`, {
+    method: 'POST',
+    body: JSON.stringify({ playbook_id: playbookId }),
+  });
+  renderState(state);
+}
+
+async function clearPlaybookSelection() {
+  const state = await getJSON(`/api/session/${sessionId}/playbook`, {
+    method: 'POST',
+    body: JSON.stringify({ playbook_id: '' }),
+  });
+  renderState(state);
 }
 
 function makeBackendOnboardingCard(settings, providers) {
@@ -502,6 +780,7 @@ function renderState(state) {
   fillProviderControls(currentProviders, currentSettings);
   syncComposerLock(state);
   syncHeaderActions(state);
+  syncPlaybookStatus(state);
 
   const messages = state.messages || [];
   const systemNotice = messages.find((m) => m.type === 'system_notice');
@@ -517,7 +796,8 @@ function renderState(state) {
 }
 
 async function loadSession() {
-  const state = await getJSON(`/api/session/${sessionId}`);
+  let state = await getJSON(`/api/session/${sessionId}`);
+  state = await maybeApplyPreferredBackend(state);
   renderState(state);
 }
 
@@ -593,6 +873,7 @@ async function saveSettings() {
     method: 'POST',
     body: JSON.stringify({ provider: chosenProvider, model: chosenModel }),
   });
+  savePreferredBackend(chosenProvider, chosenModel);
   backendCardForcedOpen = false;
   renderState(state);
 }

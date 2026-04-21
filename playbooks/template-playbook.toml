@@ -1,0 +1,26 @@
+id = "custom_playbook"
+name = "Custom Playbook"
+description = "Describe the kind of investigation this playbook should guide."
+built_in = false
+
+system_guidance = """
+Describe how SharkBot should think during this investigation.
+Explain what it should prioritize, what signals matter most, and what kinds of next steps it should prefer.
+"""
+
+prompt_hints = [
+  "Explain this packet",
+  "Show related traffic",
+]
+
+rule_hints = [
+  "tcp",
+]
+
+[[suggested_actions]]
+label = "Explain this packet"
+prompt = "Explain this packet"
+
+[[suggested_actions]]
+label = "Show related traffic"
+prompt = "Show related traffic"

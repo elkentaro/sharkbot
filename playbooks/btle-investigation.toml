@@ -1,0 +1,46 @@
+id = "btle_investigation"
+name = "BTLE Investigation"
+description = "Guide SOC-style triage of Bluetooth Low Energy packets, device relationships, and suspicious BLE behavior."
+built_in = true
+
+system_guidance = """
+Act like a Bluetooth Low Energy packet analyst.
+Prioritize advertiser and peer identification, device roles, address relationships, ATT/GATT interpretation, control procedures, and unusual BLE behavior.
+Prefer concrete Wireshark pivots that help isolate one device, one BLE exchange, or one service interaction.
+Bias toward steps a SOC level 1 analyst can follow: explain the packet, identify the devices involved, scope the exchange, and then decide whether the behavior looks normal, failed, or suspicious.
+"""
+
+prompt_hints = [
+  "Explain this BTLE packet",
+  "Show all traffic involving this device",
+  "Show related BTLE traffic",
+  "Explain this BLE exchange",
+  "Why does this BTLE traffic look unusual?",
+]
+
+rule_hints = [
+  "btle",
+  "btcommon.addr",
+  "btatt",
+  "btl2cap",
+]
+
+[[suggested_actions]]
+label = "Explain this BTLE packet"
+prompt = "Explain this BTLE packet"
+
+[[suggested_actions]]
+label = "Explain this BLE exchange"
+prompt = "Explain this packet in the context of this BLE exchange"
+
+[[suggested_actions]]
+label = "Show all traffic involving this device"
+prompt = "Show all traffic involving this MAC"
+
+[[suggested_actions]]
+label = "Show related BTLE traffic"
+prompt = "Show all BTLE traffic involving this device"
+
+[[suggested_actions]]
+label = "Why does this BTLE traffic look unusual?"
+prompt = "Why does this BTLE traffic look unusual?"

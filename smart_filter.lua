@@ -1,4 +1,4 @@
--- smart_filter.lua - SharkBot v1.6.0 Wireshark launcher with packet-context handoff
+-- smart_filter.lua - SharkBot v1.7.0 Wireshark launcher with packet-context handoff
 --
 -- Receiver config:
 -- Edit RECEIVER_BASE below to point at your receiver.

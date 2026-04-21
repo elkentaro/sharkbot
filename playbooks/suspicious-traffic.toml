@@ -1,0 +1,46 @@
+id = "suspicious_traffic"
+name = "Suspicious Traffic"
+description = "Guide SOC level 1 triage of unusual, hostile, or unclear traffic patterns."
+built_in = true
+
+system_guidance = """
+Act like a packet analyst supporting incident triage.
+Prioritize packet explanation, unexpected peers, suspicious control patterns, host scoping, scope expansion, and the next best containment-oriented pivots.
+Prefer concrete filters and next steps over generic advice.
+Help the user decide whether the traffic looks routine, misconfigured, or worth escalation, and make clear what evidence supports that decision.
+"""
+
+prompt_hints = [
+  "Explain this packet",
+  "Why is this packet suspicious?",
+  "Show all traffic involving this device",
+  "Show related traffic",
+  "Show unusual or expert-marked packets",
+]
+
+rule_hints = [
+  "_ws.expert",
+  "tcp.flags.reset == 1",
+  "icmp",
+  "dns",
+]
+
+[[suggested_actions]]
+label = "Explain this packet"
+prompt = "Explain this packet"
+
+[[suggested_actions]]
+label = "Show all traffic involving this host"
+prompt = "Show all traffic involving this device"
+
+[[suggested_actions]]
+label = "Why is this packet suspicious?"
+prompt = "Why is this packet suspicious?"
+
+[[suggested_actions]]
+label = "Show unusual or expert-marked packets"
+prompt = "Show expert warnings"
+
+[[suggested_actions]]
+label = "Show related traffic"
+prompt = "Show related traffic"

@@ -14,12 +14,13 @@ model = "builtin"
 profile = "specialist"
 name = "SharkBot"
 # Built-in profiles:
-# - "specialist" (packet analyst + incident response)
-# - "packet_analyst"
-# - "incident_response"
+# - "specialist" (training-first packet analyst + incident response)
+# - "packet_analyst" (training-first packet/protocol interpretation)
+# - "incident_response" (training-first incident scoping and containment)
 # Optional: add site-specific analyst guidance inline.
 # custom_instructions = """
 # Prioritize suspicious east-west traffic, credential misuse, and lateral movement indicators.
+# Teach the user why the next Wireshark step matters, not just what answer to give.
 # Prefer Wireshark display filters that an analyst can paste directly into the filter bar.
 # """
 # Optional: load longer analyst instructions from a separate file.

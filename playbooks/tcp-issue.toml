@@ -1,0 +1,46 @@
+id = "tcp_issue"
+name = "TCP Issue"
+description = "Guide SOC-style triage of broken, slow, or suspicious TCP sessions."
+built_in = true
+
+system_guidance = """
+Act like a TCP troubleshooting specialist.
+Prioritize peer identification, conversation isolation, retransmissions, duplicate ACKs, resets, zero-window behavior, and stream-level explanation.
+Bias toward the next step a SOC level 1 analyst can safely take in Wireshark without assuming root cause too early.
+Separate direct packet evidence from inference, and explain how each narrowing step helps confirm scope, impact, and which side appears to fail first.
+"""
+
+prompt_hints = [
+  "Explain this TCP packet",
+  "Show this TCP conversation",
+  "Show retransmissions",
+  "Show duplicate ACKs",
+  "Show resets",
+]
+
+rule_hints = [
+  "tcp",
+  "tcp.analysis.retransmission",
+  "tcp.analysis.duplicate_ack",
+  "tcp.flags.reset == 1",
+]
+
+[[suggested_actions]]
+label = "Show this TCP conversation"
+prompt = "Show this TCP conversation"
+
+[[suggested_actions]]
+label = "Explain this TCP packet"
+prompt = "Explain this TCP packet"
+
+[[suggested_actions]]
+label = "Show retransmissions"
+prompt = "Show retransmissions"
+
+[[suggested_actions]]
+label = "Show duplicate ACKs"
+prompt = "Show duplicate ACKs"
+
+[[suggested_actions]]
+label = "Show resets"
+prompt = "Show resets"

@@ -1,5 +1,14 @@
 # Change Log
 
+## v1.7.0 - 2026-04-21
+
+- promoted the codebase to the `v1.7.0` release line
+- strengthened beginner and SOC L1 triage guidance across playbooks and generic packet-analysis flow
+- improved protocol-aware scoping for Wi-Fi and BTLE device-focused filters
+- added AI coaching prompts so AI next-step guidance teaches workflow instead of only returning an answer
+- aligned built-in AI prompt profiles with the training-aid approach
+- completed a gold-master decision test pass and documented release strengths and weaknesses in `docs/v1.7-gold-master-decision-test.md`
+
 ## v1.6.0 - 2026-04-20
 
 - added a reusable `systemd` service template under `deploy/systemd/sharkbot.service`

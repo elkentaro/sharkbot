@@ -3,22 +3,40 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Smart Filter Assistant</title>
+    <title>SharkBot</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
   </head>
   <body data-session-id="{{ session_id }}">
     <main class="shell">
-      <aside class="sidebar">
-        <h1>Smart Filter</h1>
-        <p class="subtitle">Wireshark packet + filter assistant</p>
-        <div class="brand-version">Version v1.6.0</div>
+      <section class="chat-panel">
+        <header class="chat-header">
+          <div class="header-brand">
+            <h1>SharkBot</h1>
+            <p class="subtitle">Wireshark packet analysis companion</p>
+            <div class="brand-version">Version v1.7.0</div>
+          </div>
+          <div class="chat-header-main">
+            <div class="header-session-block">
+              <div class="session-header">Investigation <span id="sessionTitle">{{ session_id }}</span></div>
+              <div id="playbookStatus" class="playbook-status" hidden></div>
+            </div>
+            <div class="topbar-actions">
+              <button type="button" id="copySessionIdBtn" class="secondary">Copy ID</button>
+              <button type="button" id="exportChatBtn" class="secondary">Download Chat</button>
+              <button type="button" id="reconfigureAiBtn" class="secondary">Reconfigure AI</button>
+              <label class="theme-control" for="themeSelect">
+                <span class="topbar-theme-label">Theme</span>
+                <select id="themeSelect" class="topbar-theme-select">
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </label>
+              <button type="button" id="clearBtn" class="secondary">Clear</button>
+            </div>
+          </div>
+        </header>
 
-        <section class="card packet-context-card">
-          <div class="card-title">Selected packet</div>
-          <pre id="contextBox" class="context-box"></pre>
-        </section>
-
-        <section class="card hidden-backend-controls" aria-hidden="true">
+        <section class="hidden-backend-controls" aria-hidden="true">
           <div class="card-title">Hidden backend controls</div>
           <label class="field-label" for="providerSelect">Provider</label>
           <select id="providerSelect">
@@ -30,34 +48,6 @@
           </select>
           <button type="button" id="saveSettingsBtn" class="secondary">Use this backend</button>
         </section>
-
-        <section class="card usage-card">
-          <div class="card-title">Continue Investigation</div>
-          <div class="usage-copy">
-            Keep this investigation ID if you want to move back and forth between Wireshark and SharkBot. After you apply a filter and select a new packet, use a continue action in Wireshark to push the new packet into this same investigation.
-          </div>
-          <div class="usage-session-id">Investigation ID: <span id="sidebarSessionId">{{ session_id }}</span></div>
-          <div class="usage-actions">
-            <button type="button" id="copySessionIdBtn" class="secondary">Copy ID</button>
-            <button type="button" id="exportChatBtn" class="secondary">Download Chat</button>
-          </div>
-        </section>
-
-</aside>
-
-      <section class="chat-panel">
-        <header class="chat-header">
-          <div class="session-header">Investigation <span id="sessionTitle">{{ session_id }}</span></div>
-          <div class="topbar-actions">
-            <button type="button" id="reconfigureAiBtn" class="secondary">Reconfigure AI</button>
-            <label class="topbar-theme-label" for="themeSelect">Theme</label>
-            <select id="themeSelect" class="topbar-theme-select">
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-            <button type="button" id="clearBtn" class="secondary">Clear</button>
-          </div>
-        </header>
         <div id="messages" class="messages"></div>
         <form id="composer" class="composer">
           <input id="prompt" type="text" autocomplete="off" placeholder="Ask about this packet or ask for a Wireshark display filter..." />
