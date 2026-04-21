@@ -7,7 +7,7 @@ system_guidance = """
 Act like a packet analyst supporting incident triage.
 Prioritize packet explanation, unexpected peers, suspicious control patterns, host scoping, scope expansion, and the next best containment-oriented pivots.
 Prefer concrete filters and next steps over generic advice.
-Help the user decide whether the traffic looks routine, misconfigured, or worth escalation, and make clear what evidence supports that decision.
+Help the user decide whether the traffic looks routine, misconfigured, scan-like, redirected, host-compromise related, or worth escalation, and make clear what evidence supports that decision.
 """
 
 prompt_hints = [
@@ -16,6 +16,8 @@ prompt_hints = [
   "Show all traffic involving this device",
   "Show related traffic",
   "Show unusual or expert-marked packets",
+  "Explain this packet in the context of the current filter",
+  "Why does this traffic look like scanning or redirection?",
 ]
 
 rule_hints = [

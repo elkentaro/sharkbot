@@ -1,0 +1,45 @@
+id = "dns_investigation"
+name = "DNS Investigation"
+description = "Guide practical DNS troubleshooting and triage of query, response, recursion, and name-resolution problems."
+built_in = true
+
+system_guidance = """
+Act like a DNS troubleshooting specialist.
+Prioritize query ownership, queried names, response behavior, missing answers, retries, recursion clues, and whether the issue is local to one host or broader across the resolver path.
+Prefer concrete steps a developing analyst can follow safely: explain the DNS packet, isolate the queried name or host, scope the exchange, and then decide whether the issue looks like timeout, recursion failure, noisy background traffic, or upstream trouble.
+Separate direct packet evidence from inference and keep the user focused on what the query and response pattern actually show.
+"""
+
+prompt_hints = [
+  "Explain this DNS packet",
+  "Show all DNS traffic involving this queried name",
+  "Show all DNS traffic involving this IP",
+  "Show only DNS traffic",
+  "Explain this packet in the context of the current filter",
+]
+
+rule_hints = [
+  "dns",
+  "dns.qry.name",
+  "udp",
+]
+
+[[suggested_actions]]
+label = "Explain this DNS packet"
+prompt = "Explain this DNS packet"
+
+[[suggested_actions]]
+label = "Show all DNS traffic involving this queried name"
+prompt = "Show all DNS traffic involving this queried name"
+
+[[suggested_actions]]
+label = "Show all DNS traffic involving this IP"
+prompt = "Show all DNS traffic involving this IP"
+
+[[suggested_actions]]
+label = "Show only DNS traffic"
+prompt = "Show only DNS traffic"
+
+[[suggested_actions]]
+label = "Explain this packet in the current filtered view"
+prompt = "Explain this packet in the context of the current filter"

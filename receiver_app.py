@@ -114,6 +114,10 @@ def playbook_state_payload(state: SessionState) -> Optional[Dict[str, Any]]:
 def recommended_playbook(state: SessionState) -> Optional[Playbook]:
     context = state.context
     proto = str(context.get("packet_protocol") or context.get("protocol_hint") or "").strip().lower()
+    if context.get("dns_name") or "dns" in proto:
+        return PLAYBOOKS.get("dns_investigation")
+    if context.get("http_host") or "http" in proto:
+        return PLAYBOOKS.get("web_application_issue")
     if context.get("tcp_srcport") or context.get("tcp_dstport") or "tcp" in proto:
         return PLAYBOOKS.get("tcp_issue")
     if "btle" in proto or "ble" in proto or "bluetooth" in proto:
@@ -224,7 +228,11 @@ def playbook_guidance_summary(playbook: Playbook) -> str:
 
 def playbook_stage_text(playbook: Playbook) -> str:
     if playbook.playbook_id == "tcp_issue":
-        return "Why this sequence: first isolate the TCP conversation, then explain the packet role, then check retransmissions, duplicate ACKs, resets, or other stall indicators so you can tell which side is failing and whether the issue repeats."
+        return "Why this sequence: first isolate the TCP conversation, then explain the packet role, then check retransmissions, duplicate ACKs, resets, or other stall indicators so you can tell which side is failing, whether the issue repeats, and whether the symptoms look client-side, server-side, or in transit."
+    if playbook.playbook_id == "dns_investigation":
+        return "Why this sequence: first explain the DNS packet, then scope the name, host, or exchange involved, then confirm whether the issue looks like query failure, recursion delay, missing response, or noisy background traffic."
+    if playbook.playbook_id == "web_application_issue":
+        return "Why this sequence: first explain the web packet and scope the HTTP exchange, then isolate the host or conversation, then decide whether the issue looks like missing content, redirection, latency, or application-side behavior."
     if playbook.playbook_id == "suspicious_traffic":
         return "Why this sequence: first explain why the packet stands out, then scope the host or device, then isolate expert-marked or repeated traffic so you can decide whether the activity looks routine, misconfigured, or worth escalation."
     if playbook.playbook_id == "wifi_investigation":
@@ -596,6 +604,18 @@ def playbook_filter_focus(playbook: Optional[Playbook]) -> List[str]:
             "Whether the packets stay inside one TCP conversation or show a wider repeated failure pattern",
             "What happens immediately before and after the filtered packets so you can confirm timing and impact",
         ]
+    if playbook.playbook_id == "dns_investigation":
+        return [
+            "Which client, resolver, or upstream peer owns the query and response flow",
+            "Whether the packets show a clean question-and-answer pattern, missing response, retry, or unusual record type",
+            "Whether the traffic isolates one DNS problem or still mixes normal background name lookups with the issue",
+        ]
+    if playbook.playbook_id == "web_application_issue":
+        return [
+            "Which host pair, request, or response is central to the web problem",
+            "Whether the packets show missing content, unexpected redirects, slow server response, or repeated retries",
+            "Whether the issue looks application-side, network-side, or tied to supporting DNS or content-provider traffic",
+        ]
     if playbook.playbook_id == "suspicious_traffic":
         return [
             "Unexpected peers, unusual ports, repeated retries, resets, or expert-marked packets",
@@ -842,6 +862,44 @@ def obvious_step_after_filter(state: SessionState, playbook: Playbook, filter_te
                 "id": "after_filter_tcp_conversation",
                 "label": "Recommended next step: Show this TCP conversation",
                 "prompt": contextualize_playbook_prompt(state, "Show this TCP conversation"),
+                "kind": "recommended_step",
+            }
+    if playbook.playbook_id == "dns_investigation":
+        if "ip_scope" in tags:
+            return {
+                "id": "after_filter_dns_explain",
+                "label": "Recommended next step: Explain this DNS packet in the current filtered view",
+                "prompt": "Explain this packet in the context of the current filter",
+                "kind": "recommended_step",
+            }
+        if "udp_conversation" in tags:
+            return {
+                "id": "after_filter_dns_related_ip",
+                "label": "Recommended next step: Show all DNS traffic involving this IP",
+                "prompt": "Show all DNS traffic involving this IP",
+                "kind": "recommended_step",
+            }
+    if playbook.playbook_id == "web_application_issue":
+        if "tcp_conversation" in tags:
+            return {
+                "id": "after_filter_web_explain",
+                "label": "Recommended next step: Explain this packet in the context of the current web conversation",
+                "prompt": "Explain this packet in the context of the current filter",
+                "kind": "recommended_step",
+            }
+        if "ip_scope" in tags:
+            return {
+                "id": "after_filter_web_conversation",
+                "label": "Recommended next step: Show this web conversation",
+                "prompt": "Show the related HTTP conversation",
+                "kind": "recommended_step",
+            }
+    if playbook.playbook_id == "suspicious_traffic":
+        if "tcp_conversation" in tags or "udp_conversation" in tags:
+            return {
+                "id": "after_filter_suspicious_explain_current",
+                "label": "Recommended next step: Explain this packet in the current filtered view",
+                "prompt": "Explain this packet in the context of the current filter",
                 "kind": "recommended_step",
             }
     if playbook.playbook_id == "suspicious_traffic":
@@ -1110,7 +1168,42 @@ def obvious_playbook_next_step(state: SessionState, playbook: Playbook) -> Optio
         return {
             "id": "recommended_tcp_only",
             "label": "Recommended next step: Show only TCP traffic",
-            "prompt": "Show only TCP traffic",
+                "prompt": "Show only TCP traffic",
+                "kind": "recommended_step",
+            }
+    if playbook.playbook_id == "dns_investigation":
+        if state.context.get("dns_name"):
+            return {
+                "id": "recommended_dns_name_scope",
+                "label": "Recommended next step: Show all DNS traffic involving this queried name",
+                "prompt": "Show all DNS traffic involving this queried name",
+                "kind": "recommended_step",
+            }
+        if state.context.get("selected_ip") or state.context.get("selected_ipv6"):
+            return {
+                "id": "recommended_dns_ip_scope",
+                "label": "Recommended next step: Show all DNS traffic involving this IP",
+                "prompt": "Show all DNS traffic involving this IP",
+                "kind": "recommended_step",
+            }
+        return {
+            "id": "recommended_dns_only",
+            "label": "Recommended next step: Show only DNS traffic",
+            "prompt": "Show only DNS traffic",
+            "kind": "recommended_step",
+        }
+    if playbook.playbook_id == "web_application_issue":
+        if state.context.get("tcp_srcport") or state.context.get("tcp_dstport"):
+            return {
+                "id": "recommended_web_conversation",
+                "label": "Recommended next step: Show this web conversation",
+                "prompt": "Show the related HTTP conversation",
+                "kind": "recommended_step",
+            }
+        return {
+            "id": "recommended_web_only",
+            "label": "Recommended next step: Show only HTTP traffic",
+            "prompt": "Show only HTTP traffic",
             "kind": "recommended_step",
         }
     if playbook.playbook_id == "suspicious_traffic":

@@ -1,0 +1,44 @@
+id = "web_application_issue"
+name = "Web / HTTP Issue"
+description = "Guide practical triage of HTTP requests, responses, missing content, redirects, and basic web-application slowness."
+built_in = true
+
+system_guidance = """
+Act like a web-traffic troubleshooting specialist.
+Prioritize request and response meaning, host scoping, conversation isolation, missing content, unexpected redirects, and whether the problem looks application-side, DNS-related, or network-related.
+Prefer concrete steps a developing analyst can follow safely: explain the web packet, isolate the HTTP exchange, scope the host or conversation, and then decide whether the issue is one request, one server, or a broader browsing problem.
+Separate direct packet evidence from inference and keep the user focused on what the request/response pattern actually shows.
+"""
+
+prompt_hints = [
+  "Explain this packet",
+  "Show only HTTP traffic",
+  "Show the related HTTP conversation",
+  "Show all traffic involving this IP",
+  "Explain this packet in the context of the current filter",
+]
+
+rule_hints = [
+  "http",
+  "tcp",
+]
+
+[[suggested_actions]]
+label = "Explain this packet"
+prompt = "Explain this packet"
+
+[[suggested_actions]]
+label = "Show only HTTP traffic"
+prompt = "Show only HTTP traffic"
+
+[[suggested_actions]]
+label = "Show the related HTTP conversation"
+prompt = "Show the related HTTP conversation"
+
+[[suggested_actions]]
+label = "Show all traffic involving this IP"
+prompt = "Show all traffic involving this IP"
+
+[[suggested_actions]]
+label = "Explain this packet in the current filtered view"
+prompt = "Explain this packet in the context of the current filter"

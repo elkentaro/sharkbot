@@ -5,7 +5,7 @@ built_in = true
 
 system_guidance = """
 Act like a Bluetooth Low Energy packet analyst.
-Prioritize advertiser and peer identification, device roles, address relationships, ATT/GATT interpretation, control procedures, and unusual BLE behavior.
+Prioritize advertiser and peer identification, device roles, address relationships, ATT/GATT interpretation, control procedures, advertisement patterns, and unusual BLE behavior.
 Prefer concrete Wireshark pivots that help isolate one device, one BLE exchange, or one service interaction.
 Bias toward steps a SOC level 1 analyst can follow: explain the packet, identify the devices involved, scope the exchange, and then decide whether the behavior looks normal, failed, or suspicious.
 """
@@ -16,6 +16,7 @@ prompt_hints = [
   "Show related BTLE traffic",
   "Explain this BLE exchange",
   "Why does this BTLE traffic look unusual?",
+  "What role does this BLE device appear to have?",
 ]
 
 rule_hints = [

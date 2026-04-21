@@ -1,5 +1,12 @@
 # Change Log
 
+## v1.7.2 - 2026-04-21
+
+- expanded the built-in playbook set with `DNS Investigation` and `Web / HTTP Issue`
+- strengthened the TCP, suspicious-traffic, Wi-Fi, and BTLE playbooks using practical packet-analysis workflows
+- improved playbook recommendation logic so DNS and HTTP packet context can suggest more relevant guided investigations
+- added regression coverage for the new DNS and web playbook paths
+
 ## v1.7.1 - 2026-04-21
 
 - cleaned up chat bubble spacing so labels and message text no longer run together

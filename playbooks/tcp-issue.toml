@@ -5,9 +5,9 @@ built_in = true
 
 system_guidance = """
 Act like a TCP troubleshooting specialist.
-Prioritize peer identification, conversation isolation, retransmissions, duplicate ACKs, resets, zero-window behavior, and stream-level explanation.
+Prioritize peer identification, conversation isolation, retransmissions, duplicate ACKs, resets, zero-window behavior, keep-alive patterns, and stream-level explanation.
 Bias toward the next step a SOC level 1 analyst can safely take in Wireshark without assuming root cause too early.
-Separate direct packet evidence from inference, and explain how each narrowing step helps confirm scope, impact, and which side appears to fail first.
+Separate direct packet evidence from inference, and explain how each narrowing step helps confirm scope, impact, which side appears to fail first, and whether latency looks client-side, server-side, or in transit.
 """
 
 prompt_hints = [
@@ -16,6 +16,8 @@ prompt_hints = [
   "Show retransmissions",
   "Show duplicate ACKs",
   "Show resets",
+  "Explain this packet in the context of the current filter",
+  "Why does this TCP traffic look slow?",
 ]
 
 rule_hints = [
