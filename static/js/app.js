@@ -299,6 +299,254 @@ function appendPlaybookCta(wrapper, item) {
   wrapper.appendChild(cta);
 }
 
+function appendHandrailSection(wrapper, title, text) {
+  if (!text) return;
+  const block = document.createElement('div');
+  block.className = 'handrail-section';
+
+  const heading = document.createElement('div');
+  heading.className = 'handrail-section-title';
+  heading.textContent = title;
+  block.appendChild(heading);
+
+  const body = document.createElement('div');
+  body.className = 'handrail-section-body';
+  body.textContent = text;
+  block.appendChild(body);
+
+  wrapper.appendChild(block);
+}
+
+function guidedStatusLabel(entry) {
+  const statusMap = {
+    started: 'Started',
+    done: 'Recorded',
+    skipped: 'Skipped',
+  };
+  const parts = [entry?.title || entry?.step_id || 'Guided step'];
+  if (statusMap[entry?.status]) parts.push(statusMap[entry.status]);
+  if (entry?.observation) parts.push(entry.observation.replaceAll('_', ' '));
+  return parts.join(' · ');
+}
+
+function guidedStatusMeta(entry) {
+  const parts = [];
+  if (entry?.note) parts.push(entry.note);
+  if (entry?.timestamp) parts.push(entry.timestamp);
+  return parts.join(' · ');
+}
+
+function makeTrailCard(state) {
+  const trail = Array.isArray(state?.guided_history) ? state.guided_history.slice(-5).reverse() : [];
+  const currentFilter = String(state?.context?.current_filter || '').trim();
+  const latestObservation = Array.isArray(state?.user_observations) && state.user_observations.length
+    ? state.user_observations[state.user_observations.length - 1]
+    : null;
+  const playbookName = state?.playbook?.name || '';
+
+  if (!playbookName && !state?.investigation_goal && !currentFilter && !trail.length && !latestObservation) {
+    return null;
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg trail-card';
+
+  appendMessageLabel(wrapper, 'Investigation Trail', 'label label-system');
+  appendMessageTitle(wrapper, state?.investigation_goal || 'Stay oriented as you move between guided and free-form views.');
+
+  const summary = document.createElement('div');
+  summary.className = 'trail-summary';
+
+  const lanePill = document.createElement('div');
+  lanePill.className = 'trail-pill';
+  lanePill.textContent = `Lane: ${state?.investigation_lane === 'guided' ? 'Guided' : 'Free-form'}`;
+  summary.appendChild(lanePill);
+
+  if (playbookName) {
+    const playbookPill = document.createElement('div');
+    playbookPill.className = 'trail-pill';
+    playbookPill.textContent = `Playbook: ${playbookName}`;
+    summary.appendChild(playbookPill);
+  }
+
+  if (latestObservation?.label) {
+    const obsPill = document.createElement('div');
+    obsPill.className = 'trail-pill';
+    obsPill.textContent = `Latest observation: ${latestObservation.label}`;
+    summary.appendChild(obsPill);
+  }
+
+  wrapper.appendChild(summary);
+
+  if (currentFilter) {
+    const filterBlock = document.createElement('div');
+    filterBlock.className = 'trail-filter';
+
+    const filterTitle = document.createElement('div');
+    filterTitle.className = 'handrail-section-title';
+    filterTitle.textContent = 'Current Filter';
+    filterBlock.appendChild(filterTitle);
+
+    const filterBody = document.createElement('code');
+    filterBody.className = 'trail-filter-code';
+    filterBody.textContent = currentFilter;
+    filterBlock.appendChild(filterBody);
+
+    wrapper.appendChild(filterBlock);
+  }
+
+  if (trail.length) {
+    const history = document.createElement('div');
+    history.className = 'trail-history';
+
+    const historyTitle = document.createElement('div');
+    historyTitle.className = 'handrail-section-title';
+    historyTitle.textContent = 'Recent Guided Steps';
+    history.appendChild(historyTitle);
+
+    trail.forEach((entry) => {
+      const row = document.createElement('div');
+      row.className = 'trail-history-item';
+
+      const main = document.createElement('div');
+      main.className = 'trail-history-main';
+      main.textContent = guidedStatusLabel(entry);
+      row.appendChild(main);
+
+      const meta = guidedStatusMeta(entry);
+      if (meta) {
+        const detail = document.createElement('div');
+        detail.className = 'trail-history-meta';
+        detail.textContent = meta;
+        row.appendChild(detail);
+      }
+
+      history.appendChild(row);
+    });
+
+    wrapper.appendChild(history);
+  }
+
+  return wrapper;
+}
+
+function makeHandrailCard(state) {
+  const handrail = state?.handrail || {};
+  const step = handrail?.current_step || {};
+  if (!step?.step_id) return null;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg handrail-card';
+
+  appendMessageLabel(
+    wrapper,
+    state?.investigation_lane === 'freeform' ? 'Handrail Available' : 'Guided Handrail',
+    'label label-ai',
+  );
+  appendMessageTitle(wrapper, step.title || 'Next guided step');
+
+  if (state?.investigation_goal) {
+    const goal = document.createElement('div');
+    goal.className = 'handrail-goal';
+    goal.textContent = state.investigation_goal;
+    wrapper.appendChild(goal);
+  }
+
+  appendHandrailSection(wrapper, 'Why this matters', step.rationale);
+  appendHandrailSection(wrapper, 'How to do it in Wireshark', step.instructions);
+  appendHandrailSection(wrapper, 'What to look for', step.look_for);
+  appendHandrailSection(wrapper, 'Expected outcome', step.expected_outcome);
+  appendHandrailSection(wrapper, 'Common mistake', step.common_mistake);
+  appendHandrailSection(wrapper, 'Alternate path', step.alternate_path);
+
+  if (handrail?.reason) {
+    const meta = document.createElement('div');
+    meta.className = 'meta-line';
+    meta.textContent = handrail.reason;
+    wrapper.appendChild(meta);
+  }
+
+  if (step.reference_image) {
+    const media = document.createElement('div');
+    media.className = 'handrail-reference';
+
+    if (step.reference_title) {
+      const refTitle = document.createElement('div');
+      refTitle.className = 'handrail-section-title';
+      refTitle.textContent = `Reference: ${step.reference_title}`;
+      media.appendChild(refTitle);
+    }
+
+    const img = document.createElement('img');
+    img.className = 'handrail-reference-image';
+    img.src = step.reference_image;
+    img.alt = step.reference_title || step.title || 'Reference view';
+    media.appendChild(img);
+
+    if (step.reference_caption) {
+      const caption = document.createElement('div');
+      caption.className = 'handrail-reference-caption';
+      caption.textContent = step.reference_caption;
+      media.appendChild(caption);
+    }
+
+    wrapper.appendChild(media);
+  }
+
+  const noteInput = document.createElement('input');
+  noteInput.type = 'text';
+  noteInput.className = 'handrail-note-input';
+  noteInput.placeholder = 'Optional: what did you see after trying this?';
+  wrapper.appendChild(noteInput);
+
+  if (step.actions?.length) {
+    const primaryRow = document.createElement('div');
+    primaryRow.className = 'option-row';
+    step.actions.forEach((item) => {
+      primaryRow.appendChild(makeChip(item.label, async () => runSuggestedAction({
+        ...item,
+        note: noteInput.value.trim(),
+      })));
+    });
+    wrapper.appendChild(primaryRow);
+  }
+
+  if (step.observation_actions?.length) {
+    const obsTitle = document.createElement('div');
+    obsTitle.className = 'upgrade-title';
+    obsTitle.textContent = 'What happened after you checked?';
+    wrapper.appendChild(obsTitle);
+
+    const observationRow = document.createElement('div');
+    observationRow.className = 'option-row';
+    step.observation_actions.forEach((item) => {
+      observationRow.appendChild(makeChip(item.label, async () => runSuggestedAction({
+        ...item,
+        note: noteInput.value.trim(),
+      })));
+    });
+    wrapper.appendChild(observationRow);
+  }
+
+  if (handrail?.alternates?.length) {
+    const alternates = document.createElement('div');
+    alternates.className = 'handrail-alternates';
+    const altTitle = document.createElement('div');
+    altTitle.className = 'handrail-section-title';
+    altTitle.textContent = 'Other routes';
+    alternates.appendChild(altTitle);
+    handrail.alternates.forEach((item) => {
+      const alt = document.createElement('div');
+      alt.className = 'handrail-alternate-item';
+      alt.textContent = `${item.title}: ${item.instructions}`;
+      alternates.appendChild(alt);
+    });
+    wrapper.appendChild(alternates);
+  }
+
+  return wrapper;
+}
+
 function appendSourceNote(wrapper, message) {
   if (!message?.source_note) return;
   const row = document.createElement('div');
@@ -451,9 +699,10 @@ function renderMessage(message) {
     const s = message.summary;
     appendMessageLabel(wrapper, 'Packet', 'label label-packet');
     appendMessageTitle(wrapper, `Frame ${s.frame} · ${s.protocol}`);
+    const detailLine = s.details ? `\nDetails: ${s.details}` : '';
     appendMessageBody(
       wrapper,
-      `Source: ${s.source}\nDestination: ${s.destination}\nSelected IP: ${s.selected_ip}\nSelected MAC: ${s.selected_mac}`,
+      `Source: ${s.source}\nDestination: ${s.destination}\nSelected IP: ${s.selected_ip}\nSelected MAC: ${s.selected_mac}${detailLine}`,
       'message-body message-body-multiline',
     );
     const metaLine = document.createElement('div');
@@ -828,6 +1077,10 @@ function renderState(state) {
     messagesEl.appendChild(makeBackendOnboardingCard(currentSettings || state.settings || {}, currentProviders || []));
   }
   rest.forEach((message) => appendRenderedMessage(message));
+  const trailCard = makeTrailCard(state);
+  if (trailCard) messagesEl.appendChild(trailCard);
+  const handrailCard = makeHandrailCard(state);
+  if (handrailCard) messagesEl.appendChild(handrailCard);
 
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }

@@ -13,6 +13,10 @@ Bias toward steps a SOC level 1 analyst can follow: explain the frame, identify 
 prompt_hints = [
   "Explain this Wi-Fi packet",
   "Show all traffic involving this wireless device",
+  "Show traffic for this SSID",
+  "Show beacon frames for this SSID",
+  "Show probe request and response frames",
+  "Show traffic on this wireless channel",
   "Show related 802.11 traffic",
   "Explain this authentication or association exchange",
   "Why does this Wi-Fi traffic look unusual?",
@@ -26,22 +30,399 @@ rule_hints = [
   "wlan.addr",
 ]
 
+preferred_guidance = [
+  "open_endpoints",
+  "apply_filter",
+  "open_conversations",
+  "scope_host_or_device",
+  "open_packet_lengths",
+  "open_expert_information",
+]
+
+fallback_guidance = [
+  "ask_ai_for_next_move",
+]
+
+handrail_reason = "The Wi-Fi playbook now supports a structured handrail so the analyst can move between device scoping, anomaly views, and their own Wireshark pivots without losing coherence."
+
 [[suggested_actions]]
 label = "Explain this Wi-Fi packet"
 prompt = "Explain this Wi-Fi packet"
+kind = "explain_packet"
 
 [[suggested_actions]]
 label = "Explain this authentication or association exchange"
 prompt = "Explain this packet in the context of this wireless exchange"
+kind = "review_current_filter"
 
 [[suggested_actions]]
 label = "Show all traffic involving this wireless device"
 prompt = "Show all traffic involving this MAC"
+kind = "scope_host_or_device"
+
+[[suggested_actions]]
+label = "Show traffic for this BSSID"
+prompt = "Show traffic for this BSSID"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show traffic for this SSID"
+prompt = "Show traffic for this SSID"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show only wireless management frames"
+prompt = "Show only wireless management frames"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show only wireless control frames"
+prompt = "Show only wireless control frames"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show authentication and association frames"
+prompt = "Show authentication and association frames"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show deauthentication and disassociation frames"
+prompt = "Show deauthentication and disassociation frames"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show beacon frames for this SSID"
+prompt = "Show beacon frames for this SSID"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show probe request and response frames"
+prompt = "Show probe request and response frames"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show traffic on this wireless channel"
+prompt = "Show traffic on this wireless channel"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Show related 802.11 traffic"
 prompt = "Show all Wi-Fi traffic involving this device"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Why does this Wi-Fi traffic look unusual?"
 prompt = "Why does this Wi-Fi traffic look unusual?"
+kind = "explain_packet"
+
+[[handrail_rules]]
+observation = "helped"
+context_flags_all = ["has_wlan_bssid"]
+step_id = "scope_wireless_bssid"
+title = "Scope The BSSID"
+kind = "apply_filter"
+rationale = "Once one AP or BSSID stands out, isolate that BSSID so management and data traffic for one wireless cell stop mixing with nearby WLANs on the same channel."
+instructions = "Apply the display filter `{wireless_bssid_filter}` and keep the management and data frames for that BSSID in view."
+look_for = "Authentication, association, deauthentication, beacon, or retry patterns tied to that one AP and its clients."
+expected_outcome = "You should know whether the issue belongs to one wireless cell, one AP, or a wider RF environment."
+common_mistake = "Do not keep neighboring WLANs in scope if one BSSID already matches the failure you are troubleshooting."
+alternate_path = "If the client matters more than the AP, scope the wireless device directly instead."
+
+[[handrail_rules]]
+observation = "helped"
+context_flags_all = ["has_wlan_ssid"]
+step_id = "scope_wireless_ssid"
+title = "Scope The SSID"
+kind = "apply_filter"
+rationale = "If multiple AP radios or BSSIDs belong to the same wireless network name, isolate the SSID so discovery, join, and roaming activity for that WLAN stays together."
+instructions = "Apply the display filter `{wireless_ssid_filter}` and keep the packets for that WLAN name in view."
+look_for = "Beacon, probe, authentication, reassociation, or deauthentication patterns tied to that one WLAN name."
+expected_outcome = "You should know whether the issue belongs to one named WLAN or whether it is really one AP or one client."
+common_mistake = "Do not treat one beacon or probe as proof of the failing AP if several BSSIDs broadcast the same SSID."
+alternate_path = "If one AP already stands out, scope the BSSID directly instead."
+
+[[handrail_rules]]
+observation = "helped"
+step_id = "scope_wireless_device"
+title = "Scope The Wireless Device"
+kind = "apply_filter"
+rationale = "Once the client, AP, or BSSID stands out, isolate that device so authentication, association, and roaming clues stop mixing together."
+instructions = "Apply the display filter `{wireless_device_filter}` if it matches the device you identified."
+look_for = "A clean sequence of management or data frames tied to one client, AP, or roaming event."
+expected_outcome = "You should know whether the issue belongs to one wireless device or a wider RF/client population."
+common_mistake = "Do not keep every device in view if one client or BSSID clearly owns the issue."
+alternate_path = "If the roles are still unclear, compare the wireless endpoints again before filtering further."
+
+[[handrail_rules]]
+observation = "too_much_noise"
+context_flags_all = ["has_wlan_ssid"]
+step_id = "scope_wireless_ssid"
+title = "Scope The SSID"
+kind = "apply_filter"
+rationale = "Shared-channel captures get noisy quickly. If you already know the WLAN name, isolate that SSID before you compare all neighboring beacons and clients together."
+instructions = "Apply the display filter `{wireless_ssid_filter}` and then decide whether management, auth, or channel-specific filtering is still needed."
+look_for = "Whether one SSID dominates the beacon, probe, or join behavior around the issue."
+expected_outcome = "You should know whether the noise comes from your WLAN or from nearby wireless traffic on the same channel."
+common_mistake = "Do not keep unrelated WLAN names in scope if the capture already exposes the SSID you care about."
+alternate_path = "If the SSID is hidden or missing, narrow to management frames first instead."
+
+[[handrail_rules]]
+observation = "too_much_noise"
+step_id = "show_wireless_management_frames"
+title = "Show Only Wireless Management Frames"
+kind = "apply_filter"
+rationale = "Wireless captures are often noisy because many clients share one channel. Narrow to management frames first so beacons, probes, authentication, association, and deauthentication events stop drowning in data traffic."
+instructions = "Apply the display filter `{wireless_management_filter}` and review the management sequence before drilling into one packet."
+look_for = "Beacon volume, authentication retries, association failures, repeated probes, or deauthentication events tied to one BSSID or client."
+expected_outcome = "You should know whether the issue is really a management/auth problem or whether you should pivot back to data traffic."
+common_mistake = "Do not keep every 802.11 data frame in scope when the real failure is happening in the management exchange."
+alternate_path = "If one AP already stands out, scope the BSSID directly instead."
+
+[[handrail_rules]]
+observation = "nothing_useful"
+context_flags_all = ["has_wlan_ssid"]
+step_id = "show_beacon_and_probe_frames"
+title = "Show Beacon And Probe Frames"
+kind = "apply_filter"
+rationale = "If a generic wireless view did not explain the problem, go back to the WLAN discovery and availability frames. Beacons and probes often reveal the SSID, channel, and whether clients are finding the network at all."
+instructions = "Apply the display filter `({wireless_beacon_filter} || {wireless_probe_filter}) && {wireless_ssid_filter}` and compare beacon and probe activity around the issue."
+look_for = "Beacon presence, probe bursts, missing probe responses, or discovery activity that never progresses into auth or association."
+expected_outcome = "You should know whether the WLAN is visible and discoverable before you chase authentication failure details."
+common_mistake = "Do not jump straight into data traffic if the client may not even be discovering the WLAN cleanly."
+alternate_path = "If the SSID is unknown, review radio metrics or management frames first."
+
+[[handrail_rules]]
+observation = "nothing_useful"
+step_id = "review_wireless_radio_metrics"
+title = "Review Channel, Signal, And Data Rate"
+kind = "review_wireless_metrics"
+rationale = "If device scoping did not explain the failure, check wireless radio clues directly. Channel, signal strength, and data rate often reveal weak coverage, wrong-channel capture, or low-rate behavior that packet text alone hides."
+instructions = "Add or review the Wireshark columns for `wlan_radio.channel`, `wlan_radio.signal_dbm`, and `wlan_radio.data_rate`, then compare the packets around the issue."
+look_for = "Unexpected channel changes, weak or sharply variable signal, or very low data rates around auth, assoc, retry, or deauth activity."
+expected_outcome = "You should know whether the issue looks like RF/coverage trouble, wrong-channel capture, or a normal-management exchange that needs a different filter."
+common_mistake = "Do not assume the client utility's signal icon tells the full story if the packet-level radio fields disagree."
+alternate_path = "If you still do not have a clear failure point, open Expert Information and check for malformed or repeated wireless warnings."
+
+[[handrail_rules]]
+observation = "unexpected"
+context_flags_all = ["has_wlan_channel"]
+step_id = "scope_wireless_channel"
+title = "Scope The Wireless Channel"
+kind = "apply_filter"
+rationale = "Unexpected wireless findings can come from the wrong capture channel, channel overlap, or a rogue/neighbor WLAN. Isolate the current channel before comparing every observed frame together."
+instructions = "Apply the display filter `{wireless_channel_filter}` and verify whether the unusual traffic stays on the same channel as the issue."
+look_for = "Traffic appearing on an unexpected channel, overlapping WLANs, or one channel that contains the failure while others do not."
+expected_outcome = "You should know whether the anomaly belongs to one capture channel or to the wider wireless environment."
+common_mistake = "Do not assume every packet in the file belongs to the same WLAN or RF condition just because it was captured in one session."
+alternate_path = "If one AP or SSID already stands out, scope that WLAN directly instead."
+
+[[handrail_rules]]
+observation = "unexpected"
+step_id = "open_packet_lengths"
+title = "Open Packet Lengths"
+kind = "open_packet_lengths"
+rationale = "Unexpected wireless findings often become clearer when you compare whether the view is dominated by tiny management/control frames or by normal data-frame sizes."
+instructions = "Open Statistics > Packet Lengths for the current wireless view or filtered device scope."
+look_for = "Clusters of very small frames, retry-heavy size buckets, or a sudden lack of expected data-frame sizes."
+expected_outcome = "You should know whether the issue looks like management churn, retry noise, or missing payload traffic."
+common_mistake = "Do not use packet size alone as proof of the fault; use it to choose the next device or exchange to inspect."
+alternate_path = "If one client or BSSID already stands out, scope that wireless device directly instead."
+
+[[handrail_rules]]
+observation = "different_view"
+step_id = "review_current_filter"
+title = "Continue From Your Wireshark Pivot"
+kind = "review_current_filter"
+rationale = "The Wi-Fi handrail should continue from the AP/client clue you found, not restart because you changed views."
+instructions = "Stay on the wireless view you used and summarize the client, BSSID, or failure clue that stood out."
+look_for = "One wireless clue SharkBot can continue from, such as a repeated deauth, missing association response, or one dominant BSSID."
+expected_outcome = "You should be able to continue the Wi-Fi investigation from your own pivot."
+common_mistake = "Do not retell the whole capture; report only the clue that changes the next move."
+alternate_path = "If you need to re-anchor, return to Endpoints and identify the dominant device again."
+
+[[handrail_rules]]
+step_id = "open_endpoints"
+title = "Open Endpoints"
+kind = "open_endpoints"
+rationale = "Start by identifying the client, AP, or BSSID that dominates the wireless issue before you interpret one frame too early."
+instructions = "Open Statistics > Endpoints and compare the wireless-related endpoints or the most relevant address tab."
+look_for = "One client, AP, or BSSID that dominates the capture, retransmits heavily, or shows repeated auth/assoc behavior."
+expected_outcome = "You should know which wireless device deserves the next focused check."
+common_mistake = "Do not assume one selected frame tells you which device is actually failing."
+alternate_path = "If the device roles are already obvious, isolate the wireless device directly."
+
+[[handrail_alternates]]
+step_id = "scope_wireless_bssid"
+title = "Scope The BSSID"
+kind = "apply_filter"
+rationale = "If one AP or wireless cell is clearly involved, isolate that BSSID before comparing all clients together."
+instructions = "Apply the display filter `{wireless_bssid_filter}`."
+look_for = "Management and data activity tied to one AP and its associated clients."
+
+[[handrail_alternates]]
+step_id = "scope_wireless_ssid"
+title = "Scope The SSID"
+kind = "apply_filter"
+rationale = "If several AP radios share one WLAN name, isolate the SSID before comparing unrelated wireless networks together."
+instructions = "Apply the display filter `{wireless_ssid_filter}`."
+look_for = "Beacon, probe, auth, and reassociation behavior tied to one WLAN name."
+
+[[handrail_alternates]]
+step_id = "show_wireless_beacons"
+title = "Show Beacon Frames"
+kind = "apply_filter"
+rationale = "Beacon frames advertise the WLAN and reveal whether the AP is present on the expected channel before auth even starts."
+instructions = "Apply the display filter `{wireless_beacon_filter}` or combine it with `{wireless_ssid_filter}` when the SSID is known."
+look_for = "Expected SSID, channel, and a healthy beacon presence from the AP you care about."
+
+[[handrail_alternates]]
+step_id = "show_wireless_probes"
+title = "Show Probe Frames"
+kind = "apply_filter"
+rationale = "Probe traffic shows whether clients are actively searching for the WLAN and whether the AP is responding."
+instructions = "Apply the display filter `{wireless_probe_filter}`."
+look_for = "Probe requests without responses, bursty discovery, or client scans that never progress into association."
+
+[[handrail_alternates]]
+step_id = "show_auth_assoc_frames"
+title = "Show Authentication And Association Frames"
+kind = "apply_filter"
+rationale = "If the issue smells like join or roaming trouble, filter to the auth/assoc exchange instead of keeping all management traffic in scope."
+instructions = "Apply the display filter `{wireless_auth_assoc_filter}`."
+look_for = "Authentication retries, association responses, reassociation loops, or missing replies."
+
+[[handrail_alternates]]
+step_id = "scope_wireless_channel"
+title = "Scope The Wireless Channel"
+kind = "apply_filter"
+rationale = "If the capture may include overlapping or unexpected WLANs, isolate one channel before comparing the rest."
+instructions = "Apply the display filter `{wireless_channel_filter}`."
+look_for = "Whether the issue is confined to one wireless channel or mixed with neighboring traffic."
+
+[[handrail_alternates]]
+step_id = "review_wireless_radio_metrics"
+title = "Review Channel, Signal, And Data Rate"
+kind = "review_wireless_metrics"
+rationale = "If the packets themselves look ordinary, compare the radio-level clues before assuming a protocol failure."
+instructions = "Review the `wlan_radio.channel`, `wlan_radio.signal_dbm`, and `wlan_radio.data_rate` columns around the issue window."
+look_for = "Weak signal, rate drops, or an unexpected capture channel."
+
+[[handrail_alternates]]
+step_id = "open_expert_information"
+title = "Open Expert Information"
+kind = "open_expert_information"
+rationale = "If client/AP scoping is unclear, use Wireshark warnings to surface the next wireless clue."
+instructions = "Open Analyze > Expert Information and review the 802.11-related items."
+look_for = "Which warnings point to deauths, auth failures, or repeated retransmission behavior."
+
+[[handrail_alternates]]
+step_id = "open_conversations"
+title = "Open Conversations"
+kind = "open_conversations"
+rationale = "If one device is clear, compare its exchanges to confirm whether the issue is isolated or repeated."
+instructions = "Open Statistics > Conversations and compare the relevant wireless pairs."
+look_for = "Which exchange pattern repeats around the client, AP, or BSSID you care about."
+
+[[handrail_alternates]]
+step_id = "open_packet_lengths"
+title = "Open Packet Lengths"
+kind = "open_packet_lengths"
+rationale = "If the wireless issue feels like management churn or retry noise, compare the frame-size distribution."
+instructions = "Open Statistics > Packet Lengths for the filtered wireless scope."
+look_for = "Small-frame domination, retry-heavy buckets, or the absence of expected data-frame sizes."
+
+[[next_step_rules]]
+id = "recommended_wifi_bssid"
+label = "Recommended next step: Show traffic for this BSSID"
+prompt = "Show traffic for this BSSID"
+kind = "recommended_step"
+current_filter_present = false
+context_flags_all = ["has_wlan_bssid"]
+
+[[next_step_rules]]
+id = "recommended_wifi_ssid"
+label = "Recommended next step: Show traffic for this SSID"
+prompt = "Show traffic for this SSID"
+kind = "recommended_step"
+current_filter_present = false
+context_flags_all = ["has_wlan_ssid"]
+
+[[next_step_rules]]
+id = "recommended_wifi_explain"
+label = "Recommended next step: Explain this Wi-Fi packet"
+prompt = "Explain this Wi-Fi packet"
+kind = "recommended_step"
+current_filter_present = false
+
+[[next_step_rules]]
+id = "recommended_wifi_investigation_device"
+label = "Recommended next step: Show all traffic involving this wireless device"
+prompt = "Show all traffic involving this MAC"
+kind = "recommended_step"
+context_flags_all = ["has_preferred_device_mac"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_management"
+label = "Recommended next step: Show only wireless management frames"
+prompt = "Show only wireless management frames"
+kind = "recommended_step"
+filter_tags_any = ["wifi_bssid_scope", "wifi_ssid_scope"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_channel_bssid"
+label = "Recommended next step: Show traffic for this BSSID"
+prompt = "Show traffic for this BSSID"
+kind = "recommended_step"
+filter_tags_any = ["wifi_channel_scope"]
+context_flags_all = ["has_wlan_bssid"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_channel_ssid"
+label = "Recommended next step: Show traffic for this SSID"
+prompt = "Show traffic for this SSID"
+kind = "recommended_step"
+filter_tags_any = ["wifi_channel_scope"]
+context_flags_all = ["has_wlan_ssid"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_auth_assoc"
+label = "Recommended next step: Show authentication and association frames"
+prompt = "Show authentication and association frames"
+kind = "recommended_step"
+filter_tags_any = ["mac_scope"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_beacons"
+label = "Recommended next step: Show beacon frames for this SSID"
+prompt = "Show beacon frames for this SSID"
+kind = "recommended_step"
+filter_tags_any = ["wifi_management"]
+filter_tags_none = ["wifi_beacon", "wifi_probe", "wifi_auth_assoc", "wifi_deauth"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_probe_to_auth"
+label = "Recommended next step: Show authentication and association frames"
+prompt = "Show authentication and association frames"
+kind = "recommended_step"
+filter_tags_any = ["wifi_beacon", "wifi_probe"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_deauth"
+label = "Recommended next step: Show deauthentication and disassociation frames"
+prompt = "Show deauthentication and disassociation frames"
+kind = "recommended_step"
+filter_tags_any = ["wifi_auth_assoc"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_explain_exchange"
+label = "Recommended next step: Explain this authentication or association exchange"
+prompt = "Explain this packet in the context of this wireless exchange"
+kind = "recommended_step"
+filter_tags_any = ["wifi_deauth"]
+
+[[filter_step_rules]]
+id = "after_filter_wifi_explain"
+label = "Recommended next step: Explain this Wi-Fi packet"
+prompt = "Explain this Wi-Fi packet"
+kind = "recommended_step"
+filter_tags_any = ["wifi_management", "wifi_control", "wifi_data", "wifi", "wifi_channel_scope"]

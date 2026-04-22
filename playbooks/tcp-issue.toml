@@ -13,9 +13,11 @@ Separate direct packet evidence from inference, and explain how each narrowing s
 prompt_hints = [
   "Explain this TCP packet",
   "Show this TCP conversation",
+  "Show TCP handshake packets in this conversation",
   "Show retransmissions",
   "Show duplicate ACKs",
   "Show resets",
+  "Show zero-window packets",
   "Explain this packet in the context of the current filter",
   "Why does this TCP traffic look slow?",
 ]
@@ -27,22 +29,237 @@ rule_hints = [
   "tcp.flags.reset == 1",
 ]
 
+preferred_guidance = [
+  "open_conversations",
+  "follow_stream",
+  "open_tcp_rtt_graph",
+  "apply_filter",
+  "open_expert_information",
+]
+
+fallback_guidance = [
+  "ask_ai_for_next_move",
+]
+
+handrail_reason = "The TCP playbook now exposes a structured next move so the investigation can survive context changes and branch from what you saw."
+
 [[suggested_actions]]
 label = "Show this TCP conversation"
 prompt = "Show this TCP conversation"
+kind = "open_conversations"
 
 [[suggested_actions]]
 label = "Explain this TCP packet"
 prompt = "Explain this TCP packet"
+kind = "explain_packet"
 
 [[suggested_actions]]
 label = "Show retransmissions"
 prompt = "Show retransmissions"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show TCP handshake packets"
+prompt = "Show TCP handshake packets in this conversation"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Show duplicate ACKs"
 prompt = "Show duplicate ACKs"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Show resets"
 prompt = "Show resets"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show zero-window packets"
+prompt = "Show zero-window packets"
+kind = "apply_filter"
+
+[[handrail_rules]]
+observation = "helped"
+step_id = "follow_stream"
+title = "Follow The TCP Stream"
+kind = "follow_stream"
+rationale = "Once you know the exchange that matters, inspect the stream directly before assuming the fault is only transport-level."
+instructions = "Open Analyze > Follow > TCP Stream for the conversation that looked most important in Conversations."
+look_for = "Where payload flow stops, resets, or changes direction unexpectedly between client and server."
+expected_outcome = "You should know whether the issue looks like application behavior, missing server data, or a broken exchange."
+common_mistake = "Do not assume the first retransmission explains the root cause if the stream itself shows the application stopped talking."
+alternate_path = "If the stream is too large or mostly encrypted, open Statistics > TCP Stream Graphs > Round Trip Time instead."
+
+[[handrail_rules]]
+observation = "too_much_noise"
+step_id = "open_endpoints"
+title = "Open Endpoints"
+kind = "open_endpoints"
+rationale = "If Conversations is too noisy, step back and identify which host is carrying most of the TCP volume before drilling back in."
+instructions = "Open Statistics > Endpoints, switch to IPv4 or IPv6 as needed, and sort by packets or bytes."
+look_for = "One host that dominates the traffic or clearly matches the packet you are investigating."
+expected_outcome = "You should know which host to scope next so the TCP triage stays bounded."
+common_mistake = "Do not keep broadening if one endpoint already stands out as the likely focus."
+alternate_path = "If you already know the host pair, go back to Statistics > Conversations and sort only the TCP tab."
+
+[[handrail_rules]]
+observation = "nothing_useful"
+step_id = "open_tcp_rtt_graph"
+title = "Open The TCP RTT Graph"
+kind = "open_tcp_rtt_graph"
+rationale = "If broad scope did not help, use the TCP Round Trip Time graph to see whether latency spikes or stalls cluster around one part of the exchange."
+instructions = "Open Statistics > TCP Stream Graphs > Round Trip Time for the conversation that looks most relevant."
+look_for = "Sudden RTT spikes, flatlining latency before a stall, or one direction showing far worse timing than the other."
+expected_outcome = "You should know whether the slowdown looks timing-driven, one-sided, or worth correlating back to retransmissions and stream content."
+common_mistake = "Do not treat RTT alone as the root cause; use the graph to decide whether to inspect retransmissions, zero-window behavior, or application silence next."
+alternate_path = "If you still do not know which stream matters, open Expert Information to surface the transport warnings first."
+
+[[handrail_rules]]
+observation = "unexpected"
+step_id = "open_protocol_hierarchy"
+title = "Open Protocol Hierarchy"
+kind = "open_protocol_hierarchy"
+rationale = "Unexpected findings often mean the current packet is part of a broader mix of protocols than you assumed."
+instructions = "Open Statistics > Protocol Hierarchy and confirm which protocols dominate the current capture or filtered view."
+look_for = "Whether TCP is the main story or whether TLS, HTTP, DNS, or another protocol should lead the next check."
+expected_outcome = "You should know whether to stay in TCP triage or pivot into the protocol actually driving the behavior."
+common_mistake = "Do not keep forcing a TCP-only explanation if the hierarchy says another protocol dominates."
+alternate_path = "If you already know the protocol mix, ask SharkBot for a playbook-aware next move."
+
+[[handrail_rules]]
+observation = "different_view"
+step_id = "review_current_filter"
+title = "Continue From Your Wireshark Pivot"
+kind = "review_current_filter"
+rationale = "The handrail should follow the analyst, not reset the investigation because you chose a different Wireshark view."
+instructions = "Stay in the view you opened and summarize what changed, what host or stream stood out, or what filter you applied."
+look_for = "A clear clue SharkBot can continue from, such as one host, one conversation, or one warning pattern."
+expected_outcome = "You should be able to keep the TCP investigation coherent from your own pivot instead of starting over."
+common_mistake = "Do not restate the whole session; report only the finding that changed what you think matters."
+alternate_path = "If you want to return to the structured path, open Statistics > Conversations again and re-anchor the investigation there."
+
+[[handrail_rules]]
+current_filter_present = true
+step_id = "open_conversations"
+title = "Open Conversations"
+kind = "open_conversations"
+rationale = "You already have a filter, so validate that the current TCP view maps cleanly to one conversation before drilling deeper."
+instructions = "Open Statistics > Conversations, switch to the TCP tab, and compare the filtered packet to the busiest relevant pair."
+look_for = "Whether the current filter isolates one exchange cleanly or whether another TCP pair looks more important."
+expected_outcome = "You should know whether to keep the current filter or pivot to a better-scoped conversation."
+common_mistake = "Do not assume the current filter is the right scope just because it matches the selected packet."
+alternate_path = "If the right stream is already obvious, follow the TCP stream directly instead."
+
+[[handrail_rules]]
+step_id = "open_conversations"
+title = "Open Conversations"
+kind = "open_conversations"
+rationale = "Start with the TCP conversation list so you know which exchange matters before you chase retransmissions or resets one packet at a time."
+instructions = "Open Statistics > Conversations, switch to the TCP tab if needed, then sort by bytes or packets."
+look_for = "The top talker pair that matches the packet you selected, plus resets, one-sided traffic, or a clearly dominant conversation."
+expected_outcome = "You should know which TCP exchange to inspect next and whether this looks like one flow or a wider issue."
+common_mistake = "Do not stay on one packet too early if you still do not know which client/server pair matters most."
+alternate_path = "If the conversation is already obvious from the current filter, follow the TCP stream instead."
+
+[[handrail_alternates]]
+step_id = "follow_stream"
+title = "Follow The TCP Stream"
+kind = "follow_stream"
+rationale = "If the right exchange is already obvious, jump straight into the stream instead of re-scoping it."
+instructions = "Open Analyze > Follow > TCP Stream for the selected conversation."
+look_for = "Whether payload flow continues normally or stops abruptly."
+
+[[handrail_alternates]]
+step_id = "open_tcp_rtt_graph"
+title = "Open The TCP RTT Graph"
+kind = "open_tcp_rtt_graph"
+rationale = "If the stream is noisy or encrypted, a timing graph can show whether the issue is really transport latency."
+instructions = "Open Statistics > TCP Stream Graphs > Round Trip Time for the conversation you are already following."
+look_for = "Latency spikes, flatlining RTT, or one direction showing much worse timing."
+
+[[handrail_alternates]]
+step_id = "open_expert_information"
+title = "Open Expert Information"
+kind = "open_expert_information"
+rationale = "If the TCP path is unclear, let Wireshark surface warnings that may narrow the next check."
+instructions = "Open Analyze > Expert Information and review the TCP-related items first."
+look_for = "Repeated retransmissions, duplicate ACKs, resets, or zero-window behavior."
+
+[[handrail_alternates]]
+step_id = "show_tcp_handshake_packets"
+title = "Show TCP Handshake Packets"
+kind = "apply_filter"
+rationale = "If the failure may happen during connection setup, isolate SYN and setup packets before assuming the problem is midstream."
+instructions = "Apply the display filter `{tcp_syn_filter}` in the current TCP conversation scope."
+look_for = "Repeated SYNs, missing SYN/ACKs, or a session that never gets past connection setup."
+
+[[handrail_alternates]]
+step_id = "show_zero_window_packets"
+title = "Show Zero-Window Packets"
+kind = "apply_filter"
+rationale = "If the session appears to stall after setup, isolate zero-window behavior to check for receiver-side flow control or application backpressure."
+instructions = "Apply the display filter `{tcp_zero_window_filter}` in the current TCP conversation scope."
+look_for = "Receiver pauses, repeated zero-window advertisements, or a stream that stops because the receiving side cannot accept more data."
+
+[[next_step_rules]]
+id = "recommended_tcp_conversation"
+label = "Recommended next step: Show this TCP conversation"
+prompt = "Show this TCP conversation"
+kind = "recommended_step"
+context_flags_all = ["has_tcp_ports"]
+
+[[next_step_rules]]
+id = "recommended_tcp_only"
+label = "Recommended next step: Show only TCP traffic"
+prompt = "Show only TCP traffic"
+kind = "recommended_step"
+
+[[filter_step_rules]]
+id = "after_filter_tcp_handshake"
+label = "Recommended next step: Show retransmissions in this TCP conversation"
+prompt = "Show retransmissions in this TCP conversation"
+kind = "recommended_step"
+filter_tags_any = ["tcp_syn"]
+
+[[filter_step_rules]]
+id = "after_filter_tcp_dupacks"
+label = "Recommended next step: Show duplicate ACKs in this TCP conversation"
+prompt = "Show duplicate ACKs in this TCP conversation"
+kind = "recommended_step"
+filter_tags_any = ["tcp_retransmission"]
+
+[[filter_step_rules]]
+id = "after_filter_tcp_retransmission"
+label = "Recommended next step: Show retransmissions in this TCP conversation"
+prompt = "Show retransmissions in this TCP conversation"
+kind = "recommended_step"
+filter_tags_any = ["tcp_duplicate_ack"]
+
+[[filter_step_rules]]
+id = "after_filter_tcp_zero_window"
+label = "Recommended next step: Explain this TCP packet in the context of the current filter"
+prompt = "Explain this packet in the context of the current filter"
+kind = "recommended_step"
+filter_tags_any = ["tcp_zero_window"]
+
+[[filter_step_rules]]
+id = "after_filter_tcp_explain"
+label = "Recommended next step: Explain this TCP packet in the context of the current filter"
+prompt = "Explain this packet in the context of the current filter"
+kind = "recommended_step"
+filter_tags_any = ["tcp_reset"]
+
+[[filter_step_rules]]
+id = "after_filter_tcp_retransmissions"
+label = "Recommended next step: Show TCP handshake packets in this TCP conversation"
+prompt = "Show TCP handshake packets in this conversation"
+kind = "recommended_step"
+filter_tags_all = ["tcp_conversation"]
+filter_tags_none = ["tcp_syn", "tcp_retransmission", "tcp_duplicate_ack", "tcp_reset", "tcp_zero_window"]
+
+[[filter_step_rules]]
+id = "after_filter_tcp_conversation"
+label = "Recommended next step: Show this TCP conversation"
+prompt = "Show this TCP conversation"
+kind = "recommended_step"
+filter_tags_any = ["tcp"]

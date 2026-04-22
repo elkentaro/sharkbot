@@ -13,8 +13,12 @@ Separate direct packet evidence from inference and keep the user focused on what
 prompt_hints = [
   "Explain this packet",
   "Show only HTTP traffic",
+  "Show traffic for this HTTP host",
   "Show the related HTTP conversation",
+  "Show only HTTP responses",
+  "Show redirect responses",
   "Show all traffic involving this IP",
+  "Review the HTTP request/response chain",
   "Explain this packet in the context of the current filter",
 ]
 
@@ -23,22 +27,233 @@ rule_hints = [
   "tcp",
 ]
 
+preferred_guidance = [
+  "follow_stream",
+  "open_conversations",
+  "open_flow_graph",
+  "open_endpoints",
+  "open_protocol_hierarchy",
+]
+
+fallback_guidance = [
+  "ask_ai_for_next_move",
+]
+
+handrail_reason = "The web playbook now supports a structured next move so the investigation can continue after noisy streams, pivots, or mixed protocol clues."
+
 [[suggested_actions]]
 label = "Explain this packet"
 prompt = "Explain this packet"
+kind = "explain_packet"
 
 [[suggested_actions]]
 label = "Show only HTTP traffic"
 prompt = "Show only HTTP traffic"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show traffic for this HTTP host"
+prompt = "Show traffic for this HTTP host"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Show the related HTTP conversation"
 prompt = "Show the related HTTP conversation"
+kind = "open_conversations"
+
+[[suggested_actions]]
+label = "Show only HTTP responses"
+prompt = "Show only HTTP responses"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show redirect responses"
+prompt = "Show redirect responses"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Show all traffic involving this IP"
 prompt = "Show all traffic involving this IP"
+kind = "scope_host_or_device"
+
+[[suggested_actions]]
+label = "Review the HTTP request/response chain"
+prompt = "Review the HTTP request/response chain"
+kind = "review_http_chain"
 
 [[suggested_actions]]
 label = "Explain this packet in the current filtered view"
 prompt = "Explain this packet in the context of the current filter"
+kind = "review_current_filter"
+
+[[handrail_rules]]
+observation = "helped"
+context_flags_all = ["has_http_host"]
+step_id = "scope_http_host"
+title = "Scope The HTTP Host"
+kind = "apply_filter"
+rationale = "Once one site or Host header stands out, isolate that web host so unrelated browser requests stop mixing with the issue."
+instructions = "Apply the display filter `{http_host_filter}` and keep the request/response chain for that host in view."
+look_for = "Whether the failure is tied to one site, one redirect chain, or one server behavior instead of all web traffic from the client."
+expected_outcome = "You should know whether the issue is one host-specific web problem or part of a broader browsing pattern."
+common_mistake = "Do not keep every web host in scope if one Host header clearly matches the failure."
+alternate_path = "If the host is not obvious, compare TCP conversations first."
+
+[[handrail_rules]]
+observation = "helped"
+step_id = "open_conversations"
+title = "Open Conversations"
+kind = "open_conversations"
+rationale = "Once the stream makes sense, compare it against the broader set of conversations so you know whether the web issue is isolated or repeated."
+instructions = "Open Statistics > Conversations, switch to the TCP tab, and compare the stream you followed against the busiest related exchanges."
+look_for = "Whether one web conversation is the outlier or whether several flows show the same stall, reset, or slow behavior."
+expected_outcome = "You should know whether the issue is one exchange or part of a wider client/server pattern."
+common_mistake = "Do not assume the first bad web stream is the whole story if several conversations show the same symptom."
+alternate_path = "If the problem is clearly isolated to one flow, stay in Follow Stream and inspect the request/response sequence more closely."
+
+[[handrail_rules]]
+observation = "too_much_noise"
+step_id = "open_endpoints"
+title = "Open Endpoints"
+kind = "open_endpoints"
+rationale = "If the web traffic is noisy, identify which host pair is actually carrying the application issue before you keep drilling."
+instructions = "Open Statistics > Endpoints and sort by bytes or packets on the IP tab that matches the traffic."
+look_for = "One client/server pair that dominates the transfer volume or error pattern you care about."
+expected_outcome = "You should know which host pair to keep in scope for the web investigation."
+common_mistake = "Do not stay on a broad capture if one endpoint pair already dominates the web traffic."
+alternate_path = "If the host pair is already obvious, jump back to Follow Stream for that flow."
+
+[[handrail_rules]]
+observation = "nothing_useful"
+step_id = "open_flow_graph"
+title = "Open Flow Graph"
+kind = "open_flow_graph"
+rationale = "If the stream text did not explain the problem cleanly, the flow graph can show where the request/response sequence stops progressing."
+instructions = "Open Statistics > Flow Graph for the current web conversation or filtered view."
+look_for = "Long pauses, missing replies, abrupt resets, or one direction stopping before the application exchange should be complete."
+expected_outcome = "You should know whether the web problem is stalled in sequencing, transport behavior, or application-side silence."
+common_mistake = "Do not treat the flow graph as payload truth; use it to find where the exchange breaks, then confirm in Follow Stream or packet details."
+alternate_path = "If the flow still looks mixed, open Protocol Hierarchy and confirm whether HTTP is really the dominant layer."
+
+[[handrail_rules]]
+observation = "unexpected"
+step_id = "review_http_chain"
+title = "Review The HTTP Request/Response Chain"
+kind = "review_http_chain"
+rationale = "Unexpected web behavior can come from proxies, caches, or redirects in the request/response chain rather than from one request alone."
+instructions = "Review the request line, Host header, status code, and whether the exchange looks direct or influenced by an intermediary, cache hit, or redirect chain."
+look_for = "A redirect loop, cached response behavior, mismatched Host context, or one step in the chain that changes the outcome."
+expected_outcome = "You should know whether the issue looks like direct application behavior or a request/response chain problem."
+common_mistake = "Do not assume the first server response is the full story if a redirect or intermediary changes what the client finally receives."
+alternate_path = "If the chain still looks unclear, open Expert Information and review resets or malformed warnings around the flow."
+
+[[handrail_rules]]
+observation = "different_view"
+step_id = "review_current_filter"
+title = "Continue From Your Wireshark Pivot"
+kind = "review_current_filter"
+rationale = "The web handrail should continue from the clue you found, not restart because you used a different Wireshark view."
+instructions = "Stay on the view you opened and summarize the request, response, host, or error that changed what you think matters."
+look_for = "One web clue SharkBot can continue from, such as a status code, a reset, or a stalled response."
+expected_outcome = "You should be able to continue the web investigation from your own pivot."
+common_mistake = "Do not restate everything; report only the finding that changes the next move."
+alternate_path = "If you want to re-anchor, return to Follow Stream for the relevant conversation."
+
+[[handrail_rules]]
+step_id = "follow_stream"
+title = "Follow The Web Stream"
+kind = "follow_stream"
+rationale = "Start with the full web exchange so you can see the request/response sequence before you assume the problem is only transport noise."
+instructions = "Open Analyze > Follow > TCP Stream for the selected web conversation."
+look_for = "Missing responses, redirects, server errors, truncated content, or a request that never gets a meaningful reply."
+expected_outcome = "You should know whether the web issue looks like application behavior, missing data, or a broken transport exchange."
+common_mistake = "Do not stop at one packet if the stream clearly shows a request/response pattern that changes the diagnosis."
+alternate_path = "If the stream is unclear or encrypted, open Conversations on the TCP tab first."
+
+[[handrail_alternates]]
+step_id = "scope_http_host"
+title = "Scope The HTTP Host"
+kind = "apply_filter"
+rationale = "If one site or Host header is clearly involved, isolate it before comparing all web requests together."
+instructions = "Apply the display filter `{http_host_filter}`."
+look_for = "Whether one site, response pattern, or redirect chain owns the failure."
+
+[[handrail_alternates]]
+step_id = "open_conversations"
+title = "Open Conversations"
+kind = "open_conversations"
+rationale = "If the stream is not enough, compare the major TCP conversations carrying the web traffic."
+instructions = "Open Statistics > Conversations and sort the TCP tab by bytes or packets."
+look_for = "Whether one flow is isolated or several flows show the same symptom."
+
+[[handrail_alternates]]
+step_id = "review_http_chain"
+title = "Review The HTTP Request/Response Chain"
+kind = "review_http_chain"
+rationale = "If the packet text is not enough, step back and decide whether intermediaries, caching, or redirects are shaping the result."
+instructions = "Compare the request, response, Host header, and status code sequence for the current exchange."
+look_for = "Redirect loops, reused cached content, or a chain that differs from a simple direct request/response."
+
+[[handrail_alternates]]
+step_id = "open_flow_graph"
+title = "Open Flow Graph"
+kind = "open_flow_graph"
+rationale = "If timing and direction matter more than payload text, switch to the flow graph."
+instructions = "Open Statistics > Flow Graph for the web conversation you are following."
+look_for = "Where the request/response sequence stalls, resets, or changes direction unexpectedly."
+
+[[handrail_alternates]]
+step_id = "open_endpoints"
+title = "Open Endpoints"
+kind = "open_endpoints"
+rationale = "If the capture is broad, identify which host pair owns the web issue before drilling deeper."
+instructions = "Open Statistics > Endpoints and sort by bytes or packets."
+look_for = "Which client/server pair dominates the traffic in question."
+
+[[next_step_rules]]
+id = "recommended_web_host"
+label = "Recommended next step: Show traffic for this HTTP host"
+prompt = "Show traffic for this HTTP host"
+kind = "recommended_step"
+context_flags_all = ["has_http_host"]
+
+[[next_step_rules]]
+id = "recommended_web_conversation"
+label = "Recommended next step: Show this web conversation"
+prompt = "Show the related HTTP conversation"
+kind = "recommended_step"
+context_flags_all = ["has_tcp_ports"]
+
+[[next_step_rules]]
+id = "recommended_web_only"
+label = "Recommended next step: Show only HTTP traffic"
+prompt = "Show only HTTP traffic"
+kind = "recommended_step"
+
+[[filter_step_rules]]
+id = "after_filter_web_host"
+label = "Recommended next step: Show this web conversation"
+prompt = "Show the related HTTP conversation"
+kind = "recommended_step"
+filter_tags_any = ["http_host_scope"]
+
+[[filter_step_rules]]
+id = "after_filter_web_redirect"
+label = "Recommended next step: Explain this packet in the context of the current web conversation"
+prompt = "Explain this packet in the context of the current filter"
+kind = "recommended_step"
+filter_tags_any = ["http_redirect"]
+
+[[filter_step_rules]]
+id = "after_filter_web_explain"
+label = "Recommended next step: Explain this packet in the context of the current web conversation"
+prompt = "Explain this packet in the context of the current filter"
+kind = "recommended_step"
+filter_tags_any = ["tcp_conversation"]
+
+[[filter_step_rules]]
+id = "after_filter_web_conversation"
+label = "Recommended next step: Show this web conversation"
+prompt = "Show the related HTTP conversation"
+kind = "recommended_step"
+filter_tags_any = ["ip_scope"]

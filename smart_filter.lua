@@ -1,4 +1,4 @@
--- smart_filter.lua - SharkBot v1.7.2 Wireshark launcher with packet-context handoff
+-- smart_filter.lua - SharkBot v1.8 Wireshark launcher with packet-context handoff
 --
 -- Receiver config:
 -- Edit RECEIVER_BASE below to point at your receiver.
@@ -24,6 +24,21 @@ end
 
 local function shell_quote_single(s)
     return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
+end
+
+local function json_encode(value)
+    local value_type = type(value)
+    if value_type == "table" then
+        local parts = {}
+        for key, item in pairs(value) do
+            parts[#parts + 1] = '"' .. json_escape(key) .. '":' .. json_encode(item)
+        end
+        return "{" .. table.concat(parts, ",") .. "}"
+    end
+    if value_type == "boolean" then
+        return value and "true" or "false"
+    end
+    return '"' .. json_escape(value) .. '"'
 end
 
 local function detect_open_command(url)
@@ -149,29 +164,127 @@ local function field_value_to_string(fi)
 end
 
 local function build_context_json(ctx)
-    return '{' ..
-        '"context":{' ..
-            '"launch_source":"' .. json_escape(ctx.launch_source or "") .. '",' ..
-            '"frame_number":"' .. json_escape(ctx.frame_number or "") .. '",' ..
-            '"current_filter":"' .. json_escape(ctx.current_filter or "") .. '",' ..
-            '"selected_ip":"' .. json_escape(ctx.selected_ip or "") .. '",' ..
-            '"selected_ipv6":"' .. json_escape(ctx.selected_ipv6 or "") .. '",' ..
-            '"selected_mac":"' .. json_escape(ctx.selected_mac or "") .. '",' ..
-            '"eth_src":"' .. json_escape(ctx.eth_src or "") .. '",' ..
-            '"eth_dst":"' .. json_escape(ctx.eth_dst or "") .. '",' ..
-            '"ip_src":"' .. json_escape(ctx.ip_src or "") .. '",' ..
-            '"ip_dst":"' .. json_escape(ctx.ip_dst or "") .. '",' ..
-            '"ipv6_src":"' .. json_escape(ctx.ipv6_src or "") .. '",' ..
-            '"ipv6_dst":"' .. json_escape(ctx.ipv6_dst or "") .. '",' ..
-            '"tcp_srcport":"' .. json_escape(ctx.tcp_srcport or "") .. '",' ..
-            '"tcp_dstport":"' .. json_escape(ctx.tcp_dstport or "") .. '",' ..
-            '"udp_srcport":"' .. json_escape(ctx.udp_srcport or "") .. '",' ..
-            '"udp_dstport":"' .. json_escape(ctx.udp_dstport or "") .. '",' ..
-            '"http_host":"' .. json_escape(ctx.http_host or "") .. '",' ..
-            '"dns_name":"' .. json_escape(ctx.dns_name or "") .. '",' ..
-            '"protocol_hint":"' .. json_escape(ctx.protocol_hint or "") .. '"' ..
-        '}' ..
-    '}'
+    local payload = {
+        context = {
+            payload_version = "1.8.0",
+            context_schema = "protocol_native_v1",
+            launch_source = ctx.launch_source or "",
+            frame_number = ctx.frame_number or "",
+            current_filter = ctx.current_filter or "",
+            frame_protocols = ctx.frame_protocols or "",
+            protocol_hint = ctx.protocol_hint or "",
+            protocol_identity = ctx.protocol_identity or "",
+            highest_protocol = ctx.highest_protocol or "",
+            selected_ip = ctx.selected_ip or "",
+            selected_ipv6 = ctx.selected_ipv6 or "",
+            selected_mac = ctx.selected_mac or "",
+            eth_src = ctx.eth_src or "",
+            eth_dst = ctx.eth_dst or "",
+            ip_src = ctx.ip_src or "",
+            ip_dst = ctx.ip_dst or "",
+            ipv6_src = ctx.ipv6_src or "",
+            ipv6_dst = ctx.ipv6_dst or "",
+            tcp_srcport = ctx.tcp_srcport or "",
+            tcp_dstport = ctx.tcp_dstport or "",
+            udp_srcport = ctx.udp_srcport or "",
+            udp_dstport = ctx.udp_dstport or "",
+            tcp_stream = ctx.tcp_stream or "",
+            tcp_flags = ctx.tcp_flags or "",
+            tcp_expert = ctx.tcp_expert or "",
+            dns_name = ctx.dns_name or "",
+            dns_query_type = ctx.dns_query_type or "",
+            dns_response_code = ctx.dns_response_code or "",
+            dns_answer_count = ctx.dns_answer_count or "",
+            http_host = ctx.http_host or "",
+            http_method = ctx.http_method or "",
+            http_request_uri = ctx.http_request_uri or "",
+            http_response_code = ctx.http_response_code or "",
+            tls_sni = ctx.tls_sni or "",
+            tls_handshake_type = ctx.tls_handshake_type or "",
+            tls_record_version = ctx.tls_record_version or "",
+            icmp_type = ctx.icmp_type or "",
+            icmp_code = ctx.icmp_code or "",
+            arp_opcode = ctx.arp_opcode or "",
+            arp_src_proto_ipv4 = ctx.arp_src_proto_ipv4 or "",
+            arp_dst_proto_ipv4 = ctx.arp_dst_proto_ipv4 or "",
+            arp_src_hw_mac = ctx.arp_src_hw_mac or "",
+            arp_dst_hw_mac = ctx.arp_dst_hw_mac or "",
+            wlan_sa = ctx.wlan_sa or "",
+            wlan_da = ctx.wlan_da or "",
+            wlan_ra = ctx.wlan_ra or "",
+            wlan_ta = ctx.wlan_ta or "",
+	            wlan_bssid = ctx.wlan_bssid or "",
+	            wlan_ssid = ctx.wlan_ssid or "",
+	            wlan_type_subtype = ctx.wlan_type_subtype or "",
+	            wlan_channel = ctx.wlan_channel or "",
+	            wlan_signal_dbm = ctx.wlan_signal_dbm or "",
+	            wlan_data_rate = ctx.wlan_data_rate or "",
+	            btcommon_addr = ctx.btcommon_addr or "",
+            btatt_opcode = ctx.btatt_opcode or "",
+            btatt_handle = ctx.btatt_handle or "",
+            btl2cap_cid = ctx.btl2cap_cid or "",
+            protocol_details = {
+                tcp = {
+                    srcport = ctx.tcp_srcport or "",
+                    dstport = ctx.tcp_dstport or "",
+                    stream = ctx.tcp_stream or "",
+                    flags = ctx.tcp_flags or "",
+                    expert = ctx.tcp_expert or "",
+                },
+                udp = {
+                    srcport = ctx.udp_srcport or "",
+                    dstport = ctx.udp_dstport or "",
+                },
+                dns = {
+                    query_name = ctx.dns_name or "",
+                    query_type = ctx.dns_query_type or "",
+                    response_code = ctx.dns_response_code or "",
+                    answer_count = ctx.dns_answer_count or "",
+                },
+                http = {
+                    host = ctx.http_host or "",
+                    method = ctx.http_method or "",
+                    request_uri = ctx.http_request_uri or "",
+                    response_code = ctx.http_response_code or "",
+                },
+                tls = {
+                    server_name = ctx.tls_sni or "",
+                    handshake_type = ctx.tls_handshake_type or "",
+                    record_version = ctx.tls_record_version or "",
+                },
+                icmp = {
+                    type = ctx.icmp_type or "",
+                    code = ctx.icmp_code or "",
+                },
+                arp = {
+                    opcode = ctx.arp_opcode or "",
+                    src_proto_ipv4 = ctx.arp_src_proto_ipv4 or "",
+                    dst_proto_ipv4 = ctx.arp_dst_proto_ipv4 or "",
+                    src_hw_mac = ctx.arp_src_hw_mac or "",
+                    dst_hw_mac = ctx.arp_dst_hw_mac or "",
+                },
+                wlan = {
+                    sa = ctx.wlan_sa or "",
+                    da = ctx.wlan_da or "",
+                    ra = ctx.wlan_ra or "",
+                    ta = ctx.wlan_ta or "",
+	                    bssid = ctx.wlan_bssid or "",
+	                    ssid = ctx.wlan_ssid or "",
+	                    type_subtype = ctx.wlan_type_subtype or "",
+	                    channel = ctx.wlan_channel or "",
+	                    signal_dbm = ctx.wlan_signal_dbm or "",
+	                    data_rate = ctx.wlan_data_rate or "",
+	                },
+                btle = {
+                    address = ctx.btcommon_addr or "",
+                    att_opcode = ctx.btatt_opcode or "",
+                    att_handle = ctx.btatt_handle or "",
+                    l2cap_cid = ctx.btl2cap_cid or "",
+                },
+            },
+        },
+    }
+    return json_encode(payload)
 end
 
 local function launch_new_investigation(ctx)
@@ -222,11 +335,20 @@ end
 
 local interested_fields = {
     ["frame.number"] = "frame_number",
+    ["frame.protocols"] = "frame_protocols",
     ["eth.src"] = "eth_src",
     ["eth.dst"] = "eth_dst",
     ["eth.addr"] = "selected_mac",
-    ["wlan.sa"] = "eth_src",
-    ["wlan.da"] = "eth_dst",
+    ["wlan.sa"] = "wlan_sa",
+    ["wlan.da"] = "wlan_da",
+    ["wlan.ra"] = "wlan_ra",
+    ["wlan.ta"] = "wlan_ta",
+    ["wlan.bssid"] = "wlan_bssid",
+    ["wlan.ssid"] = "wlan_ssid",
+    ["wlan.fc.type_subtype"] = "wlan_type_subtype",
+    ["wlan_radio.channel"] = "wlan_channel",
+    ["wlan_radio.signal_dbm"] = "wlan_signal_dbm",
+    ["wlan_radio.data_rate"] = "wlan_data_rate",
     ["wlan.addr"] = "selected_mac",
     ["ip.src"] = "ip_src",
     ["ip.dst"] = "ip_dst",
@@ -236,12 +358,75 @@ local interested_fields = {
     ["ipv6.addr"] = "selected_ipv6",
     ["tcp.srcport"] = "tcp_srcport",
     ["tcp.dstport"] = "tcp_dstport",
+    ["tcp.stream"] = "tcp_stream",
+    ["tcp.flags.str"] = "tcp_flags",
+    ["_ws.expert.message"] = "tcp_expert",
     ["udp.srcport"] = "udp_srcport",
     ["udp.dstport"] = "udp_dstport",
     ["http.host"] = "http_host",
+    ["http.request.method"] = "http_method",
+    ["http.request.uri"] = "http_request_uri",
+    ["http.response.code"] = "http_response_code",
     ["dns.qry.name"] = "dns_name",
-    ["btcommon.addr"] = "selected_mac",
+    ["dns.qry.type"] = "dns_query_type",
+    ["dns.flags.rcode"] = "dns_response_code",
+    ["dns.count.answers"] = "dns_answer_count",
+    ["tls.handshake.extensions_server_name"] = "tls_sni",
+    ["tls.handshake.type"] = "tls_handshake_type",
+    ["tls.record.version"] = "tls_record_version",
+    ["icmp.type"] = "icmp_type",
+    ["icmp.code"] = "icmp_code",
+    ["arp.opcode"] = "arp_opcode",
+    ["arp.src.proto_ipv4"] = "arp_src_proto_ipv4",
+    ["arp.dst.proto_ipv4"] = "arp_dst_proto_ipv4",
+    ["arp.src.hw_mac"] = "arp_src_hw_mac",
+    ["arp.dst.hw_mac"] = "arp_dst_hw_mac",
+    ["btcommon.addr"] = "btcommon_addr",
+    ["btatt.opcode"] = "btatt_opcode",
+    ["btatt.handle"] = "btatt_handle",
+    ["btl2cap.cid"] = "btl2cap_cid",
 }
+
+local function infer_protocol_identity(ctx)
+    local frame_protocols = tostring(ctx.frame_protocols or ""):lower()
+    if ctx.dns_name or ctx.dns_query_type or frame_protocols:match("dns") then
+        return "dns"
+    end
+    if ctx.http_host or ctx.http_method or ctx.http_request_uri or ctx.http_response_code or frame_protocols:match("http") then
+        return "http"
+    end
+    if ctx.tls_sni or ctx.tls_handshake_type or ctx.tls_record_version or frame_protocols:match("tls") then
+        return "tls"
+    end
+    if ctx.wlan_sa or ctx.wlan_da or ctx.wlan_bssid or ctx.wlan_ssid or frame_protocols:match("wlan") or frame_protocols:match("802%.11") then
+        return "wlan"
+    end
+    if ctx.btcommon_addr or ctx.btatt_opcode or ctx.btl2cap_cid or frame_protocols:match("bt") then
+        return "btle"
+    end
+    if ctx.arp_opcode or ctx.arp_src_proto_ipv4 or ctx.arp_dst_proto_ipv4 or frame_protocols:match("arp") then
+        return "arp"
+    end
+    if ctx.icmp_type or ctx.icmp_code or frame_protocols:match("icmp") then
+        return "icmp"
+    end
+    if ctx.tcp_srcport or ctx.tcp_dstport or ctx.tcp_stream or frame_protocols:match("tcp") then
+        return "tcp"
+    end
+    if ctx.udp_srcport or ctx.udp_dstport or frame_protocols:match("udp") then
+        return "udp"
+    end
+    if ctx.ipv6_src or ctx.ipv6_dst or frame_protocols:match("ipv6") then
+        return "ipv6"
+    end
+    if ctx.ip_src or ctx.ip_dst or frame_protocols:match("ip") then
+        return "ip"
+    end
+    if ctx.eth_src or ctx.eth_dst then
+        return "ethernet"
+    end
+    return ctx.protocol_hint or ""
+end
 
 local function base_context(launch_source)
     return {
@@ -292,17 +477,34 @@ local function collect_packet_context(...)
     if ctx.ipv6_src ~= "" and not ctx.selected_ipv6 then
         ctx.selected_ipv6 = ctx.ipv6_src
     end
+    if ctx.wlan_sa ~= "" and not ctx.selected_mac then
+        ctx.selected_mac = ctx.wlan_sa
+    end
+    if ctx.wlan_ta ~= "" and not ctx.selected_mac then
+        ctx.selected_mac = ctx.wlan_ta
+    end
+    if ctx.btcommon_addr ~= "" and not ctx.selected_mac then
+        ctx.selected_mac = ctx.btcommon_addr
+    end
     if ctx.eth_src ~= "" and not ctx.selected_mac then
         ctx.selected_mac = ctx.eth_src
     end
 
-    if ctx.ip_src or ctx.ip_dst then
+    if ctx.wlan_sa or ctx.wlan_da or ctx.wlan_ra or ctx.wlan_ta or ctx.wlan_bssid then
+        ctx.eth_src = ctx.eth_src or ctx.wlan_sa or ctx.wlan_ta or ""
+        ctx.eth_dst = ctx.eth_dst or ctx.wlan_da or ctx.wlan_ra or ""
+        ctx.protocol_hint = "wlan"
+    elseif ctx.btcommon_addr then
+        ctx.protocol_hint = "btle"
+    elseif ctx.ip_src or ctx.ip_dst then
         ctx.protocol_hint = "ip"
     elseif ctx.ipv6_src or ctx.ipv6_dst then
         ctx.protocol_hint = "ipv6"
     elseif ctx.eth_src or ctx.eth_dst then
         ctx.protocol_hint = "ethernet"
     end
+    ctx.protocol_identity = infer_protocol_identity(ctx)
+    ctx.highest_protocol = ctx.protocol_identity
 
     return ctx
 end

@@ -14,6 +14,10 @@ prompt_hints = [
   "Explain this packet",
   "Why is this packet suspicious?",
   "Show all traffic involving this device",
+  "Show only ARP traffic",
+  "Show only ICMP traffic",
+  "Show only DHCP traffic",
+  "Show fragmentation-related traffic",
   "Show related traffic",
   "Show unusual or expert-marked packets",
   "Explain this packet in the context of the current filter",
@@ -27,22 +31,292 @@ rule_hints = [
   "dns",
 ]
 
+preferred_guidance = [
+  "open_endpoints",
+  "open_protocol_hierarchy",
+  "open_io_graph",
+  "open_expert_information",
+  "open_conversations",
+]
+
+fallback_guidance = [
+  "ask_ai_for_next_move",
+]
+
+handrail_reason = "The suspicious-traffic playbook now supports a structured triage path so the analyst can branch from noisy, empty, or surprising findings without losing scope."
+
 [[suggested_actions]]
 label = "Explain this packet"
 prompt = "Explain this packet"
+kind = "explain_packet"
 
 [[suggested_actions]]
 label = "Show all traffic involving this host"
 prompt = "Show all traffic involving this device"
+kind = "scope_host_or_device"
 
 [[suggested_actions]]
 label = "Why is this packet suspicious?"
 prompt = "Why is this packet suspicious?"
+kind = "explain_packet"
 
 [[suggested_actions]]
 label = "Show unusual or expert-marked packets"
 prompt = "Show expert warnings"
+kind = "open_expert_information"
 
 [[suggested_actions]]
 label = "Show related traffic"
 prompt = "Show related traffic"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show only ARP traffic"
+prompt = "Show only ARP traffic"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show only ICMP traffic"
+prompt = "Show only ICMP traffic"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show only DHCP traffic"
+prompt = "Show only DHCP traffic"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Show fragmentation-related traffic"
+prompt = "Show fragmentation-related traffic"
+kind = "apply_filter"
+
+[[handrail_rules]]
+observation = "helped"
+context_flags_all = ["is_arp_context"]
+step_id = "review_arp_cache_behavior"
+title = "Review ARP Cache Behavior"
+kind = "review_arp_cache_behavior"
+rationale = "ARP anomalies are often about address ownership and cache churn, not just one packet. Step back and decide whether the request/reply pattern looks like ordinary resolution or address conflict noise."
+instructions = "Review who is asking, who replies, and whether the same IP-to-MAC mapping changes or repeats unusually often."
+look_for = "Repeated requests for the same address, conflicting replies, or churn that suggests stale cache entries or address conflict."
+expected_outcome = "You should know whether the ARP traffic looks routine, stale-cache related, or suspicious enough to expand scope."
+common_mistake = "Do not treat every ARP broadcast as suspicious; focus on repeated or conflicting ownership behavior."
+alternate_path = "If you need broader scope, open Endpoints and compare which hosts dominate the ARP traffic."
+
+[[handrail_rules]]
+observation = "helped"
+context_flags_all = ["is_icmp_context"]
+step_id = "review_icmp_path_failure"
+title = "Review ICMP Path Clues"
+kind = "review_icmp_path_failure"
+rationale = "ICMP often describes a path or reachability problem more than an attack by itself. Decide whether the message reflects expected diagnostics, routing trouble, or something odd."
+instructions = "Review the ICMP type/code, who generated it, and whether it looks like a path error, redirect, echo test, or timeout signal."
+look_for = "Destination unreachable, redirect, or time-exceeded behavior that explains the suspicious symptom as a path issue instead of hostile traffic."
+expected_outcome = "You should know whether the ICMP traffic reflects path troubleshooting, routing trouble, or something worth deeper escalation."
+common_mistake = "Do not label all ICMP traffic malicious; first decide whether it is normal path control or error reporting."
+alternate_path = "If the path context is still unclear, isolate only ICMP traffic and compare who generates the messages."
+
+[[handrail_rules]]
+observation = "helped"
+context_flags_all = ["is_dhcp_context"]
+step_id = "review_dhcp_lease_flow"
+title = "Review The DHCP Lease Flow"
+kind = "review_dhcp_lease_flow"
+rationale = "DHCP anomalies are often lease-state problems rather than hostile activity. Decide whether the traffic reflects normal allocation, renewal, rebinding, or lease failure."
+instructions = "Compare whether the client is discovering, requesting, renewing, rebinding, or being denied a lease, and whether replies are missing."
+look_for = "Repeated discover/request cycles, missing offers or ACKs, DHCPNAK-like refusal behavior, or a client that keeps restarting the lease process."
+expected_outcome = "You should know whether the traffic looks like DHCP lease trouble, network reachability trouble, or something more suspicious."
+common_mistake = "Do not call the traffic hostile before you decide whether the client is simply failing to obtain or renew a lease."
+alternate_path = "If DHCP still looks normal, widen back out and compare the host's other traffic in Endpoints or Conversations."
+
+[[handrail_rules]]
+observation = "helped"
+step_id = "open_conversations"
+title = "Open Conversations"
+kind = "open_conversations"
+rationale = "Once one host or warning stands out, compare its conversations so you can tell whether the suspicious behavior is isolated or repeated."
+instructions = "Open Statistics > Conversations and sort the protocol tab that best matches the suspicious traffic."
+look_for = "One pair that carries most of the suspicious volume, resets, retries, or unusual exchanges."
+expected_outcome = "You should know whether the suspicious behavior belongs to one exchange or a wider pattern."
+common_mistake = "Do not escalate from one odd packet if the conversations view shows the traffic is broad but routine."
+alternate_path = "If one host still dominates more than one pair, go back to Endpoints and keep the host in scope."
+
+[[handrail_rules]]
+observation = "too_much_noise"
+step_id = "open_protocol_hierarchy"
+title = "Open Protocol Hierarchy"
+kind = "open_protocol_hierarchy"
+rationale = "If the suspicious traffic is too noisy, confirm which protocol family is actually driving the anomaly before narrowing further."
+instructions = "Open Statistics > Protocol Hierarchy and compare the dominant protocols in the current capture or filtered view."
+look_for = "Whether the suspicious behavior is mainly TCP, DNS, ICMP, wireless, or something else you should pivot into."
+expected_outcome = "You should know which protocol should guide the next step instead of keeping the whole noisy capture in play."
+common_mistake = "Do not assume the currently selected packet represents the real scope of the suspicious behavior."
+alternate_path = "If the protocol is already obvious, scope the busiest endpoint instead."
+
+[[handrail_rules]]
+observation = "nothing_useful"
+step_id = "open_io_graph"
+title = "Open IO Graphs"
+kind = "open_io_graph"
+rationale = "If host scoping did not explain the anomaly, use IO Graphs to see whether the suspicious behavior is bursty, periodic, or tied to a short time window."
+instructions = "Open Statistics > IO Graphs and compare packet or byte spikes for the suspicious host, protocol, or filtered view."
+look_for = "Burst patterns, regular beacon-like intervals, scan-like spikes, or a sharp anomaly window worth isolating."
+expected_outcome = "You should know whether the suspicious behavior is sustained, periodic, or tied to one time range you should inspect more closely."
+common_mistake = "Do not treat the graph alone as proof of maliciousness; use it to choose the time window, host, or flow to inspect next."
+alternate_path = "If the graph stays flat, open Expert Information and let Wireshark surface the next anomaly shortlist."
+
+[[handrail_rules]]
+observation = "unexpected"
+step_id = "review_current_filter"
+title = "Continue From The Unexpected Clue"
+kind = "review_current_filter"
+rationale = "Unexpected suspicious findings are often the clue that matters most, so the handrail should continue from your pivot instead of resetting."
+instructions = "Stay in the view you opened and summarize the host, flow, or warning that changed what you think is suspicious."
+look_for = "One concrete clue SharkBot can continue from, such as a scan-like pattern, odd redirect, or suspicious peer."
+expected_outcome = "You should be able to continue the suspicious-traffic triage from your own finding."
+common_mistake = "Do not repeat the full transcript; report only the clue that changed the next move."
+alternate_path = "If you want to re-anchor, go back to Endpoints and identify the dominant host first."
+
+[[handrail_rules]]
+observation = "different_view"
+step_id = "review_current_filter"
+title = "Continue From Your Wireshark Pivot"
+kind = "review_current_filter"
+rationale = "The suspicious-traffic handrail should follow your pivot, not trap you in one sequence."
+instructions = "Stay on the Wireshark view you used and summarize what host, protocol, or anomaly stood out."
+look_for = "One observation SharkBot can continue from without starting the triage over."
+expected_outcome = "You should be able to resume guided suspicious-traffic triage from your own view."
+common_mistake = "Do not broaden again if you already found the host or protocol that matters."
+alternate_path = "If you need to re-anchor, open Protocol Hierarchy and confirm the dominant protocol first."
+
+[[handrail_rules]]
+step_id = "open_endpoints"
+title = "Open Endpoints"
+kind = "open_endpoints"
+rationale = "Start by identifying which host or device is actually carrying the suspicious traffic before you decide what the behavior means."
+instructions = "Open Statistics > Endpoints and sort by packets or bytes on the IP tab that matches the capture."
+look_for = "One host that dominates the odd traffic volume, reaches unusual peers, or stands out compared with the rest of the capture."
+expected_outcome = "You should know which host deserves the next suspicious-traffic check."
+common_mistake = "Do not label the traffic malicious before you know which host or device is really driving it."
+alternate_path = "If the suspicious host is already obvious, open Expert Information next."
+
+[[handrail_alternates]]
+step_id = "review_arp_cache_behavior"
+title = "Review ARP Cache Behavior"
+kind = "review_arp_cache_behavior"
+rationale = "If the anomaly is at layer 2, check whether address ownership and cache behavior explain it before escalating."
+instructions = "Compare repeated ARP requests and replies for the same IP-to-MAC mapping."
+look_for = "Address conflicts, stale-cache churn, or repeated unanswered ARP requests."
+
+[[handrail_alternates]]
+step_id = "review_icmp_path_failure"
+title = "Review ICMP Path Clues"
+kind = "review_icmp_path_failure"
+rationale = "If the suspicious packet is ICMP, decide whether it reflects path control or a real anomaly."
+instructions = "Review the ICMP type/code and which device generated it."
+look_for = "Timeout, unreachable, or redirect behavior that explains the traffic."
+
+[[handrail_alternates]]
+step_id = "review_dhcp_lease_flow"
+title = "Review The DHCP Lease Flow"
+kind = "review_dhcp_lease_flow"
+rationale = "If the suspicious packet is DHCP, decide whether the client is allocating, renewing, rebinding, or failing."
+instructions = "Compare the lease exchange around the selected packet."
+look_for = "Repeated discover/request cycles or missing offer/ACK responses."
+
+[[handrail_alternates]]
+step_id = "open_expert_information"
+title = "Open Expert Information"
+kind = "open_expert_information"
+rationale = "If you need a faster anomaly shortlist, let Wireshark surface warnings first."
+instructions = "Open Analyze > Expert Information and review the warnings and notes."
+look_for = "Which warning points to the next host, flow, or protocol to investigate."
+
+[[handrail_alternates]]
+step_id = "open_io_graph"
+title = "Open IO Graphs"
+kind = "open_io_graph"
+rationale = "If the anomaly feels bursty or periodic, graph it before drilling into one packet."
+instructions = "Open Statistics > IO Graphs and compare the suspicious traffic over time."
+look_for = "Spikes, repeating bursts, or time windows where the anomaly clearly stands out."
+
+[[handrail_alternates]]
+step_id = "open_protocol_hierarchy"
+title = "Open Protocol Hierarchy"
+kind = "open_protocol_hierarchy"
+rationale = "If the suspicious capture is broad, confirm the dominant protocol before narrowing."
+instructions = "Open Statistics > Protocol Hierarchy and compare the major protocol families in view."
+look_for = "Which protocol actually owns most of the suspicious activity."
+
+[[next_step_rules]]
+id = "recommended_suspicious_icmp"
+label = "Recommended next step: Show only ICMP traffic"
+prompt = "Show only ICMP traffic"
+kind = "recommended_step"
+current_filter_present = false
+context_flags_all = ["is_icmp_context"]
+
+[[next_step_rules]]
+id = "recommended_suspicious_arp"
+label = "Recommended next step: Show only ARP traffic"
+prompt = "Show only ARP traffic"
+kind = "recommended_step"
+current_filter_present = false
+context_flags_all = ["is_arp_context"]
+
+[[next_step_rules]]
+id = "recommended_suspicious_dhcp"
+label = "Recommended next step: Show only DHCP traffic"
+prompt = "Show only DHCP traffic"
+kind = "recommended_step"
+current_filter_present = false
+context_flags_all = ["is_dhcp_context"]
+
+[[next_step_rules]]
+id = "recommended_suspicious_explain"
+label = "Recommended next step: Why is this packet suspicious?"
+prompt = "Why is this packet suspicious?"
+kind = "recommended_step"
+current_filter_present = false
+
+[[next_step_rules]]
+id = "recommended_scope_ip"
+label = "Recommended next step: Show all traffic involving this IP"
+prompt = "Show all traffic involving this IP"
+kind = "recommended_step"
+context_flags_all = ["has_selected_ip"]
+
+[[next_step_rules]]
+id = "recommended_scope_mac"
+label = "Recommended next step: Show all traffic involving this MAC"
+prompt = "Show all traffic involving this MAC"
+kind = "recommended_step"
+context_flags_all = ["has_preferred_device_mac"]
+
+[[filter_step_rules]]
+id = "after_filter_suspicious_control_plane"
+label = "Recommended next step: Explain this packet in the current filtered view"
+prompt = "Explain this packet in the context of the current filter"
+kind = "recommended_step"
+filter_tags_any = ["arp", "icmp", "dhcp", "ip_fragments"]
+
+[[filter_step_rules]]
+id = "after_filter_suspicious_explain_current"
+label = "Recommended next step: Explain this packet in the current filtered view"
+prompt = "Explain this packet in the context of the current filter"
+kind = "recommended_step"
+filter_tags_any = ["tcp_conversation", "udp_conversation"]
+
+[[filter_step_rules]]
+id = "after_filter_suspicious_expert"
+label = "Recommended next step: Show unusual or expert-marked packets"
+prompt = "Show expert warnings"
+kind = "recommended_step"
+filter_tags_any = ["ip_scope", "mac_scope"]
+
+[[filter_step_rules]]
+id = "after_filter_suspicious_explain"
+label = "Recommended next step: Why is this packet suspicious?"
+prompt = "Why is this packet suspicious?"
+kind = "recommended_step"
+filter_tags_any = ["expert"]

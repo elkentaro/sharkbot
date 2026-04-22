@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Wireshark IO Graphs reference">
+  <rect width="1200" height="720" fill="#0f172a"/>
+  <rect x="40" y="36" width="1120" height="648" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <rect x="72" y="72" width="1056" height="46" rx="10" fill="#1e293b"/>
+  <text x="96" y="101" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="26" font-weight="700">Statistics &gt; IO Graphs</text>
+  <rect x="72" y="140" width="280" height="36" rx="8" fill="#0f766e"/>
+  <text x="92" y="164" fill="#ecfeff" font-family="Arial, sans-serif" font-size="20" font-weight="700">Packets Per Interval</text>
+  <rect x="72" y="206" width="1056" height="340" rx="12" fill="#0b1220" stroke="#334155"/>
+  <polyline points="110,484 190,476 270,472 350,420 430,438 510,294 590,326 670,248 750,276 830,214 910,232 990,198 1070,170" fill="none" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="110,504 190,502 270,498 350,492 430,468 510,462 590,458 670,432 750,436 830,414 910,402 990,396 1070,388" fill="none" stroke="#fbbf24" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+  <text x="94" y="580" fill="#fcd34d" font-family="Arial, sans-serif" font-size="24" font-weight="700">Look for bursts, repeating spikes, or outage windows before you chase one packet.</text>
+  <text x="94" y="620" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">Useful when suspicious traffic, retries, or DNS problems look periodic or time-bound.</text>
+</svg>

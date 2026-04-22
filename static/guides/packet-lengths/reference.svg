@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Wireshark Packet Lengths reference">
+  <rect width="1200" height="720" fill="#0f172a"/>
+  <rect x="40" y="36" width="1120" height="648" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <rect x="72" y="72" width="1056" height="46" rx="10" fill="#1e293b"/>
+  <text x="96" y="101" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="26" font-weight="700">Statistics &gt; Packet Lengths</text>
+  <rect x="92" y="494" width="150" height="70" rx="10" fill="#1d4ed8" opacity="0.36" stroke="#93c5fd"/>
+  <rect x="286" y="354" width="150" height="210" rx="10" fill="#0f766e" opacity="0.38" stroke="#5eead4"/>
+  <rect x="480" y="438" width="150" height="126" rx="10" fill="#7c3aed" opacity="0.34" stroke="#c4b5fd"/>
+  <rect x="674" y="282" width="150" height="282" rx="10" fill="#ea580c" opacity="0.34" stroke="#fdba74"/>
+  <rect x="868" y="520" width="150" height="44" rx="10" fill="#334155" opacity="0.9" stroke="#94a3b8"/>
+  <text x="112" y="588" fill="#dbeafe" font-family="Arial, sans-serif" font-size="20">0-63</text>
+  <text x="308" y="588" fill="#ccfbf1" font-family="Arial, sans-serif" font-size="20">64-127</text>
+  <text x="500" y="588" fill="#ede9fe" font-family="Arial, sans-serif" font-size="20">128-255</text>
+  <text x="696" y="588" fill="#ffedd5" font-family="Arial, sans-serif" font-size="20">256-511</text>
+  <text x="890" y="588" fill="#e2e8f0" font-family="Arial, sans-serif" font-size="20">512+</text>
+  <text x="94" y="634" fill="#fcd34d" font-family="Arial, sans-serif" font-size="24" font-weight="700">Look for control-frame-heavy captures, retry noise, or missing payload-size buckets.</text>
+</svg>

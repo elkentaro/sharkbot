@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Wireshark Protocol Hierarchy reference">
+  <rect width="1200" height="720" fill="#0f172a"/>
+  <rect x="40" y="36" width="1120" height="648" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <rect x="72" y="72" width="1056" height="46" rx="10" fill="#1e293b"/>
+  <text x="96" y="101" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="26" font-weight="700">Statistics &gt; Protocol Hierarchy</text>
+  <rect x="72" y="196" width="1056" height="56" rx="8" fill="#1f2937"/>
+  <text x="94" y="230" fill="#93c5fd" font-family="Arial, sans-serif" font-size="18">Protocol</text>
+  <text x="454" y="230" fill="#93c5fd" font-family="Arial, sans-serif" font-size="18">Packets</text>
+  <text x="654" y="230" fill="#93c5fd" font-family="Arial, sans-serif" font-size="18">Percent</text>
+  <rect x="72" y="270" width="1056" height="66" rx="8" fill="#1d4ed8" opacity="0.2"/>
+  <text x="94" y="310" fill="#f8fafc" font-family="Arial, sans-serif" font-size="24" font-weight="700">TCP</text>
+  <text x="474" y="310" fill="#f8fafc" font-family="Arial, sans-serif" font-size="24" font-weight="700">6,420</text>
+  <text x="678" y="310" fill="#f8fafc" font-family="Arial, sans-serif" font-size="24" font-weight="700">71%</text>
+  <rect x="72" y="348" width="1056" height="56" rx="8" fill="#0f766e" opacity="0.18"/>
+  <text x="134" y="382" fill="#d1fae5" font-family="Arial, sans-serif" font-size="22">HTTP</text>
+  <text x="474" y="382" fill="#d1fae5" font-family="Arial, sans-serif" font-size="22">1,118</text>
+  <text x="678" y="382" fill="#d1fae5" font-family="Arial, sans-serif" font-size="22">12%</text>
+  <text x="94" y="444" fill="#fcd34d" font-family="Arial, sans-serif" font-size="24" font-weight="700">Look for the protocol actually dominating the problem.</text>
+  <text x="94" y="484" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">Use this when the current packet may not represent the main protocol story in the capture.</text>
+  <rect x="72" y="528" width="1056" height="94" rx="12" fill="#0b1220" stroke="#334155"/>
+  <text x="94" y="568" fill="#5eead4" font-family="Arial, sans-serif" font-size="22" font-weight="700">Handrail cue</text>
+  <text x="94" y="604" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="24">Pivot if the hierarchy says your current protocol is not the main driver.</text>
+</svg>

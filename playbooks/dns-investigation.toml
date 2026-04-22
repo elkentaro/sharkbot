@@ -13,8 +13,11 @@ Separate direct packet evidence from inference and keep the user focused on what
 prompt_hints = [
   "Explain this DNS packet",
   "Show all DNS traffic involving this queried name",
+  "Show all DNS traffic involving this resolver",
   "Show all DNS traffic involving this IP",
   "Show only DNS traffic",
+  "Review whether this looks like recursive or iterative resolution",
+  "Review DNS caching and TTL clues",
   "Explain this packet in the context of the current filter",
 ]
 
@@ -24,22 +27,208 @@ rule_hints = [
   "udp",
 ]
 
+preferred_guidance = [
+  "open_conversations",
+  "apply_filter",
+  "open_protocol_hierarchy",
+  "open_io_graph",
+  "open_endpoints",
+]
+
+fallback_guidance = [
+  "ask_ai_for_next_move",
+]
+
+handrail_reason = "The DNS playbook now supports a structured next move so the user can branch from noisy, empty, or surprising DNS results without losing context."
+
 [[suggested_actions]]
 label = "Explain this DNS packet"
 prompt = "Explain this DNS packet"
+kind = "explain_packet"
 
 [[suggested_actions]]
 label = "Show all DNS traffic involving this queried name"
 prompt = "Show all DNS traffic involving this queried name"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Show all DNS traffic involving this IP"
 prompt = "Show all DNS traffic involving this IP"
+kind = "scope_host_or_device"
+
+[[suggested_actions]]
+label = "Show all DNS traffic involving this resolver"
+prompt = "Show all DNS traffic involving this IP"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Show only DNS traffic"
 prompt = "Show only DNS traffic"
+kind = "apply_filter"
+
+[[suggested_actions]]
+label = "Review recursive vs iterative resolution"
+prompt = "Review whether this looks like recursive or iterative resolution"
+kind = "review_dns_resolution_path"
+
+[[suggested_actions]]
+label = "Review DNS caching and TTL clues"
+prompt = "Review DNS caching and TTL clues"
+kind = "review_dns_caching"
 
 [[suggested_actions]]
 label = "Explain this packet in the current filtered view"
 prompt = "Explain this packet in the context of the current filter"
+kind = "review_current_filter"
+
+[[handrail_rules]]
+observation = "helped"
+step_id = "scope_queried_name"
+title = "Scope The Queried Name"
+kind = "apply_filter"
+rationale = "Once you know the DNS peers, isolate the queried name so retries, failures, and mixed background lookups stop blurring together."
+instructions = "Apply the display filter `{dns_query_filter}` and keep the DNS conversation in view."
+look_for = "Repeated queries, missing responses, SERVFAIL or NXDOMAIN results, or one client retrying much more than expected."
+expected_outcome = "You should know whether the issue belongs to one name, one resolver exchange, or broader DNS behavior."
+common_mistake = "Do not keep every name in scope if only one lookup seems tied to the user-visible issue."
+alternate_path = "If the queried name is not available, open Protocol Hierarchy and confirm whether DNS is actually dominant enough to lead the investigation."
+
+[[handrail_rules]]
+observation = "too_much_noise"
+step_id = "open_protocol_hierarchy"
+title = "Open Protocol Hierarchy"
+kind = "open_protocol_hierarchy"
+rationale = "If the UDP or DNS conversations are too noisy, verify whether DNS is really the main traffic pattern before narrowing further."
+instructions = "Open Statistics > Protocol Hierarchy and review how much of the capture is DNS versus supporting protocols."
+look_for = "Whether DNS is dominant enough to stay in focus or whether another protocol should steer the next step."
+expected_outcome = "You should know whether to keep narrowing DNS or pivot into the protocol that is actually driving the issue."
+common_mistake = "Do not assume every noisy UDP capture is a DNS problem just because one packet is DNS."
+alternate_path = "If DNS is clearly dominant, return to Conversations and sort only the UDP tab."
+
+[[handrail_rules]]
+observation = "nothing_useful"
+step_id = "review_dns_resolution_path"
+title = "Review The Resolver Path"
+kind = "review_dns_resolution_path"
+rationale = "If the basic DNS scope did not help, step back and decide where the query seems to be failing in the resolver chain before guessing at root cause."
+instructions = "Compare the client, local resolver, and any upstream DNS peers in view. Decide whether the packets look like a stub resolver asking for recursion, a local resolver forwarding upstream, or a response that never makes it back down the chain."
+look_for = "Whether the issue appears to stop at the client, local resolver, or upstream side, and whether the flow resembles recursive or iterative resolution behavior."
+expected_outcome = "You should know whether to keep focusing on one queried name, one resolver, or the wider resolution path."
+common_mistake = "Do not treat every DNS exchange as one flat query/response pair if the local resolver is acting on behalf of the client."
+alternate_path = "If the resolver path is still unclear, open Expert Information and look for transport or malformed-packet clues around the DNS exchange."
+
+[[handrail_rules]]
+observation = "unexpected"
+step_id = "open_endpoints"
+title = "Open Endpoints"
+kind = "open_endpoints"
+rationale = "Unexpected DNS results often mean the real story is which client or resolver is talking, not just which packet you selected."
+instructions = "Open Statistics > Endpoints and identify the busiest client and resolver pair involved in the DNS traffic."
+look_for = "One endpoint pair that clearly owns the retries, failures, or unusual query volume."
+expected_outcome = "You should know which host or resolver to scope next."
+common_mistake = "Do not keep the whole capture in view if one endpoint pair is clearly driving the DNS issue."
+alternate_path = "If the resolver pair is already obvious, isolate the queried name instead."
+
+[[handrail_rules]]
+observation = "different_view"
+step_id = "review_current_filter"
+title = "Continue From Your Wireshark Pivot"
+kind = "review_current_filter"
+rationale = "The guided lane should continue from the DNS clue you found, not reset because you used a different Wireshark view."
+instructions = "Stay on the view you opened and summarize the DNS host, name, or result that changed what you think matters."
+look_for = "One finding SharkBot can continue from, such as a resolver pair, an error code, or a repeated query pattern."
+expected_outcome = "You should be able to continue the DNS investigation from your own pivot."
+common_mistake = "Do not rewrite the whole session; only report the clue that changed the next move."
+alternate_path = "If you want to re-anchor, open Conversations again on the UDP tab."
+
+[[handrail_rules]]
+step_id = "open_conversations"
+title = "Open Conversations"
+kind = "open_conversations"
+rationale = "Start with DNS conversations so you know which client and resolver pair matters before you chase one lookup in isolation."
+instructions = "Open Statistics > Conversations, switch to the UDP tab, and sort by packets."
+look_for = "The client/resolver pair that dominates the DNS exchange, plus retries or one-sided traffic that suggest a broken lookup flow."
+expected_outcome = "You should know which DNS pair to scope next and whether the issue is one exchange or wider background traffic."
+common_mistake = "Do not assume the selected packet is the only DNS flow that matters if the Conversations view shows a much busier pair."
+alternate_path = "If the right pair is already obvious, isolate the queried name directly with a display filter."
+
+[[handrail_alternates]]
+step_id = "review_dns_resolution_path"
+title = "Review The Resolver Path"
+kind = "review_dns_resolution_path"
+rationale = "If retries alone are not enough, decide whether the client, local resolver, or upstream server is the real failure point."
+instructions = "Compare the DNS client/resolver pair with any upstream resolver traffic and note where the exchange stops."
+look_for = "Which part of the resolution chain fails to answer or pass the reply back."
+
+[[handrail_alternates]]
+step_id = "review_dns_caching"
+title = "Review DNS Caching And TTL"
+kind = "review_dns_caching"
+rationale = "Caching can hide or repeat DNS problems, so check whether the traffic pattern looks like a fresh lookup, a repeated miss, or a cache-driven answer path."
+instructions = "Review the response pattern, TTL values, and whether repeated client requests trigger fresh upstream lookups or are answered locally."
+look_for = "Short TTLs, repeated misses, or behavior consistent with negative caching or stale-cache suspicion."
+
+[[handrail_alternates]]
+step_id = "open_protocol_hierarchy"
+title = "Open Protocol Hierarchy"
+kind = "open_protocol_hierarchy"
+rationale = "If DNS is noisy, confirm whether it is actually the dominant protocol problem first."
+instructions = "Open Statistics > Protocol Hierarchy and compare DNS against the rest of the capture."
+look_for = "Whether DNS is dominant enough to stay in focus."
+
+[[handrail_alternates]]
+step_id = "open_io_graph"
+title = "Open IO Graphs"
+kind = "open_io_graph"
+rationale = "If the DNS issue looks bursty or intermittent, graph the traffic over time before you keep narrowing names and hosts."
+instructions = "Open Statistics > IO Graphs and compare DNS packet spikes across the time range you care about."
+look_for = "Retry bursts, timeout windows, or sudden resolver spikes that line up with the user-visible problem."
+
+[[handrail_alternates]]
+step_id = "open_endpoints"
+title = "Open Endpoints"
+kind = "open_endpoints"
+rationale = "If the resolver pair matters more than one lookup, identify the busiest endpoints first."
+instructions = "Open Statistics > Endpoints and sort by packets or bytes."
+look_for = "Which client and resolver pair owns most of the DNS traffic."
+
+[[next_step_rules]]
+id = "recommended_dns_name_scope"
+label = "Recommended next step: Show all DNS traffic involving this queried name"
+prompt = "Show all DNS traffic involving this queried name"
+kind = "recommended_step"
+context_flags_all = ["has_dns_name"]
+
+[[next_step_rules]]
+id = "recommended_dns_ip_scope"
+label = "Recommended next step: Show all DNS traffic involving this IP"
+prompt = "Show all DNS traffic involving this IP"
+kind = "recommended_step"
+context_flags_all = ["has_selected_ip"]
+
+[[next_step_rules]]
+id = "recommended_dns_only"
+label = "Recommended next step: Show only DNS traffic"
+prompt = "Show only DNS traffic"
+kind = "recommended_step"
+
+[[filter_step_rules]]
+id = "after_filter_dns_name_scope"
+label = "Recommended next step: Explain this DNS packet in the current filtered view"
+prompt = "Explain this packet in the context of the current filter"
+kind = "recommended_step"
+filter_tags_any = ["dns_name_scope"]
+
+[[filter_step_rules]]
+id = "after_filter_dns_explain"
+label = "Recommended next step: Explain this DNS packet in the current filtered view"
+prompt = "Explain this packet in the context of the current filter"
+kind = "recommended_step"
+filter_tags_any = ["ip_scope"]
+
+[[filter_step_rules]]
+id = "after_filter_dns_related_ip"
+label = "Recommended next step: Show all DNS traffic involving this IP"
+prompt = "Show all DNS traffic involving this IP"
+kind = "recommended_step"
+filter_tags_any = ["udp_conversation"]

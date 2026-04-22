@@ -1,5 +1,13 @@
 # Change Log
 
+## v1.8.0 - 2026-04-23
+
+- added the `v1.8` guided handrail system with metadata-driven next-step selection across the built-in playbooks
+- expanded first-class Wireshark workflow guidance with reference assets for Conversations, Endpoints, Protocol Hierarchy, Expert Information, Follow Stream, IO Graphs, Flow Graph, Packet Lengths, and TCP RTT
+- made investigation progression linear for transcript/export consistency and improved the investigation trail UI
+- strengthened protocol-aware guidance for TCP, DNS, HTTP, suspicious traffic, and Wi-Fi / 802.11, while marking BLE / BTLE coverage as limited
+- added lightweight baseline save/compare support and protocol-native payload expansion in the receiver and Lua handoff
+
 ## v1.7.2 - 2026-04-21
 
 - expanded the built-in playbook set with `DNS Investigation` and `Web / HTTP Issue`

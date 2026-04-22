@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Wireshark Expert Information reference">
+  <rect width="1200" height="720" fill="#0b1220"/>
+  <rect x="40" y="36" width="1120" height="648" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <rect x="72" y="72" width="1056" height="46" rx="10" fill="#1e293b"/>
+  <text x="96" y="101" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="26" font-weight="700">Analyze &gt; Expert Information</text>
+  <rect x="72" y="150" width="220" height="36" rx="8" fill="#7c2d12"/>
+  <text x="96" y="174" fill="#fff7ed" font-family="Arial, sans-serif" font-size="20" font-weight="700">Warnings / Notes</text>
+  <rect x="72" y="216" width="1056" height="70" rx="8" fill="#7f1d1d" opacity="0.28" stroke="#fca5a5"/>
+  <text x="94" y="258" fill="#fee2e2" font-family="Arial, sans-serif" font-size="22" font-weight="700">TCP Retransmission</text>
+  <text x="424" y="258" fill="#fee2e2" font-family="Arial, sans-serif" font-size="22">Frame 1189</text>
+  <rect x="72" y="300" width="1056" height="70" rx="8" fill="#92400e" opacity="0.26" stroke="#fcd34d"/>
+  <text x="94" y="342" fill="#fef3c7" font-family="Arial, sans-serif" font-size="22" font-weight="700">Malformed or unexpected response</text>
+  <text x="94" y="420" fill="#fcd34d" font-family="Arial, sans-serif" font-size="24" font-weight="700">Look for warnings that narrow the next check, not a final answer.</text>
+  <text x="94" y="460" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">Use Expert Information when scope-building alone does not explain the issue.</text>
+  <rect x="72" y="516" width="1056" height="106" rx="12" fill="#0f172a" stroke="#334155"/>
+  <text x="94" y="556" fill="#5eead4" font-family="Arial, sans-serif" font-size="22" font-weight="700">Handrail cue</text>
+  <text x="94" y="596" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="24">Use the warning list to choose your next targeted view or filter.</text>
+</svg>

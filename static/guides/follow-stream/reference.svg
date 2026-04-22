@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Wireshark Follow Stream reference">
+  <rect width="1200" height="720" fill="#0f172a"/>
+  <rect x="40" y="36" width="1120" height="648" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <rect x="72" y="72" width="1056" height="46" rx="10" fill="#1e293b"/>
+  <text x="96" y="101" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="26" font-weight="700">Analyze &gt; Follow &gt; Stream</text>
+  <rect x="72" y="150" width="1056" height="390" rx="12" fill="#0b1220" stroke="#334155"/>
+  <text x="94" y="198" fill="#93c5fd" font-family="Arial, sans-serif" font-size="22" font-weight="700">Client</text>
+  <text x="210" y="198" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">GET /index.html HTTP/1.1</text>
+  <text x="94" y="246" fill="#93c5fd" font-family="Arial, sans-serif" font-size="22" font-weight="700">Client</text>
+  <text x="210" y="246" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">Host: example.org</text>
+  <text x="94" y="312" fill="#5eead4" font-family="Arial, sans-serif" font-size="22" font-weight="700">Server</text>
+  <text x="210" y="312" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="22">HTTP/1.1 500 Internal Server Error</text>
+  <text x="94" y="360" fill="#5eead4" font-family="Arial, sans-serif" font-size="22" font-weight="700">Server</text>
+  <text x="210" y="360" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="22">Connection: close</text>
+  <text x="94" y="436" fill="#fcd34d" font-family="Arial, sans-serif" font-size="24" font-weight="700">Look for the full request/response pattern, not one packet in isolation.</text>
+  <text x="94" y="476" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">Use this when application behavior matters more than individual transport frames.</text>
+  <rect x="72" y="572" width="1056" height="70" rx="12" fill="#0b1220" stroke="#334155"/>
+  <text x="94" y="616" fill="#5eead4" font-family="Arial, sans-serif" font-size="22" font-weight="700">Handrail cue</text>
+  <text x="274" y="616" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="24">If the stream is noisy or unclear, compare Conversations or Endpoints next.</text>
+</svg>

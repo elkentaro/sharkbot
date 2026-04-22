@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Wireshark TCP RTT Graph reference">
+  <rect width="1200" height="720" fill="#0f172a"/>
+  <rect x="40" y="36" width="1120" height="648" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <rect x="72" y="72" width="1056" height="46" rx="10" fill="#1e293b"/>
+  <text x="96" y="101" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="26" font-weight="700">Statistics &gt; TCP Stream Graphs &gt; Round Trip Time</text>
+  <rect x="72" y="150" width="1056" height="382" rx="12" fill="#0b1220" stroke="#334155"/>
+  <polyline points="110,470 190,462 270,448 350,440 430,432 510,404 590,364 670,316 750,282 830,308 910,376 990,444 1070,468" fill="none" stroke="#5eead4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="830" cy="308" r="10" fill="#fbbf24"/>
+  <text x="852" y="314" fill="#fde68a" font-family="Arial, sans-serif" font-size="20">Latency spike before stall</text>
+  <text x="94" y="586" fill="#fcd34d" font-family="Arial, sans-serif" font-size="24" font-weight="700">Look for RTT spikes, flatlining latency, or one-sided timing problems before and during failure.</text>
+  <text x="94" y="626" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">Useful when retransmissions alone do not explain whether the issue is congestion, distance, or application silence.</text>
+</svg>

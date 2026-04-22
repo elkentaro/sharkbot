@@ -42,6 +42,13 @@ class SessionState:
     backend_confirmed: bool = False
     playbook_id: Optional[str] = None
     applied_filters: List[Dict[str, str]] = field(default_factory=list)
+    investigation_goal: str = ""
+    investigation_lane: str = "freeform"
+    handrail: Dict[str, Any] = field(default_factory=dict)
+    guided_history: List[Dict[str, Any]] = field(default_factory=list)
+    user_observations: List[Dict[str, Any]] = field(default_factory=list)
+    reference_assets_enabled: bool = True
+    baseline_snapshot: Dict[str, Any] = field(default_factory=dict)
 
 
 SESSIONS: Dict[str, SessionState] = {}
@@ -78,9 +85,128 @@ PROTOCOL_MAP = {
     "ssdp": "ssdp",
 }
 
+WIFI_SUBTYPE_LABELS = {
+    "0x00": "Association request",
+    "0x01": "Association response",
+    "0x02": "Reassociation request",
+    "0x03": "Reassociation response",
+    "0x04": "Probe request",
+    "0x05": "Probe response",
+    "0x08": "Beacon",
+    "0x0A": "Disassociation",
+    "0x0B": "Authentication",
+    "0x0C": "Deauthentication",
+    "0x0D": "Action frame",
+    "0x18": "Block ACK request",
+    "0x19": "Block ACK",
+    "0x1A": "Power save poll",
+    "0x1B": "Request to send",
+    "0x1C": "Clear to send",
+    "0x1D": "ACK",
+    "0x1E": "Contention free period end",
+    "0x24": "NULL data",
+    "0x28": "QoS data",
+    "0x2C": "Null QoS data",
+}
+
+WIFI_ASSOC_SUBTYPE_FILTER = "(wlan.fc.type_subtype == 0x00 || wlan.fc.type_subtype == 0x01 || wlan.fc.type_subtype == 0x02 || wlan.fc.type_subtype == 0x03)"
+WIFI_AUTH_ASSOC_SUBTYPE_FILTER = f"({WIFI_ASSOC_SUBTYPE_FILTER[1:-1]} || wlan.fc.type_subtype == 0x0B)"
+WIFI_DEAUTH_SUBTYPE_FILTER = "(wlan.fc.type_subtype == 0x0A || wlan.fc.type_subtype == 0x0C)"
+WIFI_PROBE_SUBTYPE_FILTER = "(wlan.fc.type_subtype == 0x04 || wlan.fc.type_subtype == 0x05)"
+TCP_SYN_FILTER = "tcp.flags.syn == 1"
+TCP_ZERO_WINDOW_FILTER = "tcp.analysis.zero_window"
+ARP_ONLY_FILTER = "arp"
+ICMP_ONLY_FILTER = "icmp"
+DHCP_ONLY_FILTER = "dhcp || bootp"
+IP_FRAGMENT_FILTER = "(ip.flags.mf == 1 || ip.frag_offset > 0)"
+HTTP_RESPONSE_FILTER = "http.response"
+HTTP_REDIRECT_FILTER = "(http.response.code >= 300 && http.response.code < 400)"
+
+HANDRAIL_OBSERVATION_OPTIONS = [
+    {"id": "helped", "label": "This helped"},
+    {"id": "too_much_noise", "label": "Too much noise"},
+    {"id": "nothing_useful", "label": "I saw nothing useful"},
+    {"id": "unexpected", "label": "I saw something unexpected"},
+    {"id": "different_view", "label": "I used a different Wireshark view"},
+]
+
+HANDRAIL_OBSERVATION_LABELS = {item["id"]: item["label"] for item in HANDRAIL_OBSERVATION_OPTIONS}
+
+REFERENCE_ASSET_DEFS = {
+    "conversations": {
+        "id": "conversations",
+        "title": "Statistics > Conversations",
+        "path": "static/guides/conversations/reference.svg",
+        "caption": "Use Conversations to find the pair that dominates the issue before you chase individual packets.",
+    },
+    "endpoints": {
+        "id": "endpoints",
+        "title": "Statistics > Endpoints",
+        "path": "static/guides/endpoints/reference.svg",
+        "caption": "Use Endpoints to identify which host or device is actually carrying the traffic you care about.",
+    },
+    "protocol_hierarchy": {
+        "id": "protocol_hierarchy",
+        "title": "Statistics > Protocol Hierarchy",
+        "path": "static/guides/protocol-hierarchy/reference.svg",
+        "caption": "Use Protocol Hierarchy to confirm whether you are chasing the right protocol before narrowing further.",
+    },
+    "expert_information": {
+        "id": "expert_information",
+        "title": "Analyze > Expert Information",
+        "path": "static/guides/expert-info/reference.svg",
+        "caption": "Use Expert Information to surface warnings and anomalies before guessing at the root cause.",
+    },
+    "follow_stream": {
+        "id": "follow_stream",
+        "title": "Analyze > Follow > TCP Stream",
+        "path": "static/guides/follow-stream/reference.svg",
+        "caption": "Use Follow Stream to see the full client/server exchange instead of one packet at a time.",
+    },
+    "io_graphs": {
+        "id": "io_graphs",
+        "title": "Statistics > IO Graphs",
+        "path": "static/guides/io-graphs/reference.svg",
+        "caption": "Use IO Graphs to see whether spikes, retries, or suspicious bursts cluster in time before chasing individual packets.",
+    },
+    "flow_graph": {
+        "id": "flow_graph",
+        "title": "Statistics > Flow Graph",
+        "path": "static/guides/flow-graph/reference.svg",
+        "caption": "Use Flow Graph to see where request and response direction changes or stalls across the exchange.",
+    },
+    "packet_lengths": {
+        "id": "packet_lengths",
+        "title": "Statistics > Packet Lengths",
+        "path": "static/guides/packet-lengths/reference.svg",
+        "caption": "Use Packet Lengths to compare whether the traffic is dominated by small control frames, normal payloads, or unusual size clusters.",
+    },
+    "tcp_rtt_graph": {
+        "id": "tcp_rtt_graph",
+        "title": "Statistics > TCP Stream Graphs > Round Trip Time",
+        "path": "static/guides/tcp-rtt/reference.svg",
+        "caption": "Use the RTT graph to see whether latency spikes or stalls align with the conversation you are troubleshooting.",
+    },
+}
+
 
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def canonical_wlan_subtype(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return f"0x{int(text, 0):02X}"
+    except (TypeError, ValueError):
+        lowered = text.lower()
+        return lowered if lowered.startswith("0x") else text
+
+
+def wlan_subtype_label(value: Any) -> str:
+    return WIFI_SUBTYPE_LABELS.get(canonical_wlan_subtype(value), "")
 
 
 def provider_payload() -> List[Dict[str, Any]]:
@@ -124,12 +250,440 @@ def recommended_playbook(state: SessionState) -> Optional[Playbook]:
         return PLAYBOOKS.get("btle_investigation")
     if proto in {"wlan", "wifi", "wi-fi", "802.11"} or "wlan" in proto or "wifi" in proto or "802.11" in proto:
         return PLAYBOOKS.get("wifi_investigation")
-    return None
+    return PLAYBOOKS.get("suspicious_traffic")
 
 
 def recommended_playbook_payload(state: SessionState) -> Optional[Dict[str, Any]]:
     playbook = recommended_playbook(state)
     return playbook.payload() if playbook else None
+
+
+def baseline_payload(state: SessionState) -> Optional[Dict[str, Any]]:
+    return state.baseline_snapshot or None
+
+
+def investigation_goal_text(state: SessionState) -> str:
+    playbook = active_playbook(state)
+    if not playbook:
+        return "Understand the selected packet and choose the next useful Wireshark view."
+    if playbook.playbook_id == "tcp_issue":
+        return "Find where the TCP exchange is stalling before drilling into individual packets."
+    if playbook.playbook_id == "dns_investigation":
+        return "Confirm whether the DNS issue is query scope, response quality, or recursion delay."
+    if playbook.playbook_id == "web_application_issue":
+        return "Determine whether the web issue is in the HTTP exchange, the host pair, or the application response."
+    if playbook.playbook_id == "suspicious_traffic":
+        return "Scope the suspicious behavior before deciding whether it is benign, broken, or worth escalation."
+    if playbook.playbook_id == "wifi_investigation":
+        return "Identify the wireless role, exchange, or failure point before narrowing further."
+    if playbook.playbook_id == "btle_investigation":
+        return "Identify the BLE peers and exchange type before narrowing the issue further."
+    return f"Use the {playbook.name} playbook to narrow the investigation."
+
+
+def current_timestamp() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def update_guided_history(
+    state: SessionState,
+    step: Dict[str, Any],
+    *,
+    status: str,
+    observation: str = "",
+    note: str = "",
+) -> None:
+    if not step:
+        return
+    entry = {
+        "step_id": step.get("step_id") or step.get("id") or "",
+        "kind": step.get("kind") or "",
+        "title": step.get("title") or step.get("label") or "",
+        "status": status,
+        "observation": observation,
+        "note": note,
+        "timestamp": current_timestamp(),
+    }
+    for idx in range(len(state.guided_history) - 1, -1, -1):
+        existing = state.guided_history[idx]
+        if existing.get("step_id") == entry["step_id"]:
+            state.guided_history[idx] = {**existing, **entry}
+            return
+    state.guided_history.append(entry)
+
+
+def latest_user_observation(state: SessionState) -> Optional[Dict[str, Any]]:
+    return state.user_observations[-1] if state.user_observations else None
+
+
+def handrail_result_actions(step_id: str) -> List[Dict[str, str]]:
+    return [
+        {
+            "id": f"{step_id}_{item['id']}",
+            "label": item["label"],
+            "kind": "guided_step_result",
+            "step_id": step_id,
+            "result": item["id"],
+        }
+        for item in HANDRAIL_OBSERVATION_OPTIONS
+    ]
+
+
+def handrail_primary_actions(step: Dict[str, Any]) -> List[Dict[str, str]]:
+    step_id = step.get("step_id") or step.get("id") or "guided_step"
+    return [
+        {
+            "id": f"{step_id}_start",
+            "label": "Do this step",
+            "kind": "guided_step_start",
+            "step_id": step_id,
+        },
+        {
+            "id": f"{step_id}_skip",
+            "label": "Skip",
+            "kind": "guided_step_skip",
+            "step_id": step_id,
+        },
+        {
+            "id": f"{step_id}_alternate",
+            "label": "Ask for another approach",
+            "kind": "guided_step_alternate",
+            "step_id": step_id,
+        },
+        {
+            "id": f"{step_id}_freeform",
+            "label": "Continue free-form",
+            "kind": "guided_step_freeform",
+            "step_id": step_id,
+        },
+    ]
+
+
+def reference_asset_id_for_step(kind: str) -> str:
+    return {
+        "open_conversations": "conversations",
+        "open_endpoints": "endpoints",
+        "open_protocol_hierarchy": "protocol_hierarchy",
+        "open_expert_information": "expert_information",
+        "follow_stream": "follow_stream",
+        "open_io_graph": "io_graphs",
+        "open_flow_graph": "flow_graph",
+        "open_packet_lengths": "packet_lengths",
+        "open_tcp_rtt_graph": "tcp_rtt_graph",
+    }.get(kind, "")
+
+
+def reference_asset_payload_by_id(asset_id: str) -> Optional[Dict[str, str]]:
+    asset = REFERENCE_ASSET_DEFS.get(asset_id)
+    if not asset:
+        return None
+    configured_path = asset["path"]
+    root, ext = os.path.splitext(configured_path)
+    candidate_paths = [f"{root}.png"] if ext.lower() == ".svg" else []
+    candidate_paths.append(configured_path)
+    resolved_path = next((path for path in candidate_paths if os.path.exists(os.path.join(APP_ROOT, path))), "")
+    if not resolved_path:
+        return None
+    return {
+        "id": asset["id"],
+        "title": asset["title"],
+        "url": "/" + resolved_path.replace(os.sep, "/"),
+        "caption": asset["caption"],
+    }
+
+
+def with_reference_asset(step: Dict[str, Any]) -> Dict[str, Any]:
+    asset_id = reference_asset_id_for_step(step.get("kind") or "")
+    asset = reference_asset_payload_by_id(asset_id) if asset_id else None
+    if not asset:
+        return step
+    enriched = dict(step)
+    enriched["reference_image"] = asset["url"]
+    enriched["reference_title"] = asset["title"]
+    enriched["reference_caption"] = asset["caption"]
+    return enriched
+
+
+GUIDANCE_TEMPLATE_PATTERN = re.compile(r"{([a-z0-9_]+)}")
+HANDRAIL_STEP_STRING_FIELDS = (
+    "step_id",
+    "title",
+    "kind",
+    "rationale",
+    "instructions",
+    "look_for",
+    "expected_outcome",
+    "common_mistake",
+    "alternate_path",
+)
+
+
+def guidance_context_flags(state: SessionState) -> set[str]:
+    context = state.context
+    proto = normalize(str(context.get("packet_protocol") or context.get("protocol_hint") or ""))
+    flags: set[str] = set()
+    wlan_subtype = canonical_wlan_subtype(protocol_detail(context, "wlan_type_subtype", "wlan", "type_subtype"))
+    if context.get("current_filter"):
+        flags.add("has_current_filter")
+    if context.get("selected_ip") or context.get("selected_ipv6"):
+        flags.add("has_selected_ip")
+    if context.get("selected_mac"):
+        flags.add("has_selected_mac")
+    if preferred_device_mac(context):
+        flags.add("has_preferred_device_mac")
+    if protocol_detail(context, "dns_name", "dns", "query_name"):
+        flags.add("has_dns_name")
+    if context.get("tcp_srcport") or context.get("tcp_dstport"):
+        flags.add("has_tcp_ports")
+    if context.get("http_host"):
+        flags.add("has_http_host")
+    if protocol_detail(context, "http_response_code", "http", "response_code"):
+        flags.add("has_http_response_code")
+    if protocol_detail(context, "dns_response_code", "dns", "response_code"):
+        flags.add("has_dns_response_code")
+    if context.get("arp_opcode") or proto == "arp":
+        flags.add("is_arp_context")
+    if context.get("icmp_type") or context.get("icmp_code") or proto == "icmp":
+        flags.add("is_icmp_context")
+    if proto == "dhcp" or "bootp" in proto:
+        flags.add("is_dhcp_context")
+    if context.get("dns_name") or proto == "dns":
+        flags.add("is_dns_context")
+    if context.get("http_host") or proto == "http":
+        flags.add("is_http_context")
+    if proto in {"wlan", "wifi", "wi-fi", "802.11"} or "wlan" in proto or "wifi" in proto or "802.11" in proto:
+        flags.add("is_wireless_context")
+    if protocol_detail(context, "wlan_bssid", "wlan", "bssid"):
+        flags.add("has_wlan_bssid")
+    if protocol_detail(context, "wlan_ssid", "wlan", "ssid"):
+        flags.add("has_wlan_ssid")
+    if protocol_detail(context, "wlan_type_subtype", "wlan", "type_subtype"):
+        flags.add("has_wlan_type_subtype")
+    if wlan_subtype == "0x08":
+        flags.add("is_wlan_beacon")
+    if wlan_subtype in {"0x04", "0x05"}:
+        flags.add("is_wlan_probe")
+    if wlan_subtype in {"0x00", "0x01", "0x02", "0x03"}:
+        flags.add("is_wlan_assoc")
+    if wlan_subtype in {"0x00", "0x01", "0x02", "0x03", "0x0B"}:
+        flags.add("is_wlan_auth_assoc")
+    if wlan_subtype in {"0x0A", "0x0C"}:
+        flags.add("is_wlan_deauth")
+    if protocol_detail(context, "wlan_channel", "wlan", "channel"):
+        flags.add("has_wlan_channel")
+    if any(
+        protocol_detail(context, key, "wlan", nested)
+        for key, nested in [
+            ("wlan_channel", "channel"),
+            ("wlan_signal_dbm", "signal_dbm"),
+            ("wlan_data_rate", "data_rate"),
+        ]
+    ):
+        flags.add("has_wlan_radio_metrics")
+    if "btle" in proto or "ble" in proto or "bluetooth" in proto:
+        flags.add("is_btle_context")
+    return flags
+
+
+def guidance_template_values(state: SessionState) -> Dict[str, str]:
+    context = state.context
+    dns_name = protocol_detail(context, "dns_name", "dns", "query_name")
+    http_host = protocol_detail(context, "http_host", "http", "host")
+    selected_ip = first_nonempty(context.get("selected_ip"), context.get("selected_ipv6"))
+    selected_ip_filter = ""
+    if selected_ip:
+        selected_ip_filter = f"{'ipv6' if ':' in str(selected_ip) else 'ip'}.addr == {selected_ip}"
+    preferred_mac = preferred_device_mac(context)
+    ble_mac = preferred_mac or protocol_detail(context, "btcommon_addr", "btle", "address")
+    return {
+        "current_filter": str(context.get("current_filter") or ""),
+        "selected_ip": selected_ip,
+        "selected_ip_filter": selected_ip_filter or "ip.addr == <selected-ip>",
+        "selected_mac": str(context.get("selected_mac") or ""),
+        "preferred_device_mac": preferred_mac,
+        "dns_name": dns_name,
+        "dns_query_filter": f'dns.qry.name == "{dns_name}"' if dns_name else "dns",
+        "dns_resolver_filter": f"dns && {selected_ip_filter}" if selected_ip_filter else "dns && ip.addr == <resolver-ip>",
+        "http_host_filter": f'http.host == "{http_host}"' if http_host else 'http.host == "<http-host>"',
+        "wireless_device_filter": f"wlan.addr == {preferred_mac}" if preferred_mac else "wlan.addr == <wireless-device-mac>",
+        "wireless_bssid_filter": (
+            f"wlan.bssid == {protocol_detail(context, 'wlan_bssid', 'wlan', 'bssid')}"
+            if protocol_detail(context, "wlan_bssid", "wlan", "bssid")
+            else "wlan.bssid == <bssid>"
+        ),
+        "wireless_ssid_filter": (
+            f'wlan.ssid == "{protocol_detail(context, "wlan_ssid", "wlan", "ssid")}"'
+            if protocol_detail(context, "wlan_ssid", "wlan", "ssid")
+            else 'wlan.ssid == "<ssid>"'
+        ),
+        "wireless_management_filter": "wlan.fc.type == 0",
+        "wireless_control_filter": "wlan.fc.type == 1",
+        "wireless_data_filter": "wlan.fc.type == 2",
+        "wireless_beacon_filter": "wlan.fc.type_subtype == 0x08",
+        "wireless_probe_filter": WIFI_PROBE_SUBTYPE_FILTER,
+        "wireless_assoc_filter": WIFI_ASSOC_SUBTYPE_FILTER,
+        "wireless_auth_assoc_filter": WIFI_AUTH_ASSOC_SUBTYPE_FILTER,
+        "wireless_deauth_filter": WIFI_DEAUTH_SUBTYPE_FILTER,
+        "wireless_channel_filter": (
+            f"wlan_radio.channel == {protocol_detail(context, 'wlan_channel', 'wlan', 'channel')}"
+            if protocol_detail(context, "wlan_channel", "wlan", "channel")
+            else "wlan_radio.channel == <channel>"
+        ),
+        "tcp_syn_filter": TCP_SYN_FILTER,
+        "tcp_zero_window_filter": TCP_ZERO_WINDOW_FILTER,
+        "arp_only_filter": ARP_ONLY_FILTER,
+        "icmp_only_filter": ICMP_ONLY_FILTER,
+        "dhcp_only_filter": DHCP_ONLY_FILTER,
+        "ip_fragment_filter": IP_FRAGMENT_FILTER,
+        "http_response_filter": HTTP_RESPONSE_FILTER,
+        "http_redirect_filter": HTTP_REDIRECT_FILTER,
+        "ble_device_filter": f"btcommon.addr == {ble_mac}" if ble_mac else "btcommon.addr == <ble-device-address>",
+    }
+
+
+def render_guidance_text(value: str, state: SessionState) -> str:
+    if not value:
+        return ""
+    template_values = guidance_template_values(state)
+    return GUIDANCE_TEMPLATE_PATTERN.sub(lambda match: template_values.get(match.group(1), match.group(0)), value)
+
+
+def render_handrail_step_definition(state: SessionState, definition: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: render_guidance_text(str(definition.get(key) or ""), state)
+        for key in HANDRAIL_STEP_STRING_FIELDS
+        if definition.get(key)
+    }
+
+
+def rule_matches(
+    state: SessionState,
+    rule: Dict[str, Any],
+    *,
+    observation: str = "",
+    filter_tags: Optional[set[str]] = None,
+) -> bool:
+    if rule.get("observation") and rule.get("observation") != observation:
+        return False
+    if "current_filter_present" in rule:
+        current_filter_present = bool(state.context.get("current_filter"))
+        if current_filter_present != bool(rule.get("current_filter_present")):
+            return False
+
+    flags = guidance_context_flags(state)
+    flags_all = set(rule.get("context_flags_all") or [])
+    if flags_all and not flags_all.issubset(flags):
+        return False
+    flags_any = set(rule.get("context_flags_any") or [])
+    if flags_any and not flags.intersection(flags_any):
+        return False
+
+    if filter_tags is not None:
+        tags_any = set(rule.get("filter_tags_any") or [])
+        if tags_any and not filter_tags.intersection(tags_any):
+            return False
+        tags_all = set(rule.get("filter_tags_all") or [])
+        if tags_all and not tags_all.issubset(filter_tags):
+            return False
+        tags_none = set(rule.get("filter_tags_none") or [])
+        if tags_none and filter_tags.intersection(tags_none):
+            return False
+
+    return True
+
+
+def resolve_guided_action_rule(
+    state: SessionState,
+    rules: List[Dict[str, Any]],
+    *,
+    filter_tags: Optional[set[str]] = None,
+) -> Optional[Dict[str, str]]:
+    for rule in rules:
+        if not rule_matches(state, rule, filter_tags=filter_tags):
+            continue
+        label = render_guidance_text(str(rule.get("label") or ""), state)
+        prompt = render_guidance_text(str(rule.get("prompt") or ""), state)
+        if not label or not prompt:
+            continue
+        return {
+            "id": str(rule.get("id") or f"guided_{label.lower().replace(' ', '_')}"),
+            "label": label,
+            "prompt": prompt,
+            **({"kind": str(rule.get("kind") or "")} if rule.get("kind") else {}),
+        }
+    return None
+
+
+def resolve_handrail_step(state: SessionState, playbook: Playbook) -> Dict[str, Any]:
+    observation = str((latest_user_observation(state) or {}).get("result") or "")
+    for rule in playbook.handrail_rules:
+        if rule_matches(state, rule, observation=observation):
+            return render_handrail_step_definition(state, rule)
+    return {}
+
+
+def reference_assets_payload(state: SessionState) -> Dict[str, Any]:
+    items: List[Dict[str, str]] = []
+    current_step = (state.handrail or {}).get("current_step") or {}
+    asset_id = reference_asset_id_for_step(current_step.get("kind") or "")
+    asset = reference_asset_payload_by_id(asset_id) if asset_id else None
+    if asset:
+        items.append(asset)
+    return {
+        "enabled": bool(state.reference_assets_enabled),
+        "items": items,
+    }
+
+
+def build_handrail(state: SessionState) -> Dict[str, Any]:
+    playbook = active_playbook(state)
+    if not playbook:
+        return {}
+
+    current_step = resolve_handrail_step(state, playbook)
+    if not current_step:
+        return {}
+    alternates = [render_handrail_step_definition(state, item) for item in playbook.handrail_alternates]
+    reason = playbook.handrail_reason
+
+    current_step = with_reference_asset(current_step)
+    step_id = current_step["step_id"]
+    history_entry = next((item for item in reversed(state.guided_history) if item.get("step_id") == step_id), None)
+    current_step = {
+        **current_step,
+        "status": history_entry.get("status", "ready") if history_entry else "ready",
+        "actions": handrail_primary_actions(current_step),
+        "observation_actions": handrail_result_actions(step_id),
+    }
+    alternates = rank_playbook_guidance_items(playbook, [with_reference_asset(item) for item in alternates])
+
+    latest = latest_user_observation(state)
+    return {
+        "playbook_bias": playbook.playbook_id,
+        "reason": reason,
+        "current_step": current_step,
+        "alternates": alternates,
+        "latest_observation": latest,
+    }
+
+
+def refresh_handrail_state(state: SessionState) -> None:
+    state.investigation_goal = state.investigation_goal or investigation_goal_text(state)
+    state.investigation_lane = state.investigation_lane or ("guided" if active_playbook(state) else "freeform")
+    state.handrail = build_handrail(state)
+
+
+def refresh_guidance_state(state: SessionState) -> None:
+    state.suggested_actions = guided_next_steps(state)
+    refresh_handrail_state(state)
+
+
+def reset_investigation_state(state: SessionState) -> None:
+    state.guided_history = []
+    state.user_observations = []
+    state.investigation_goal = investigation_goal_text(state)
+    state.investigation_lane = "guided" if active_playbook(state) else "freeform"
+    state.handrail = {}
 
 
 def available_ai_provider_ids() -> List[str]:
@@ -149,12 +703,137 @@ def provider_prompt_suffix(provider_id: str) -> str:
     }.get(provider_id, provider_id)
 
 
+def first_nonempty(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def protocol_detail(context: Dict[str, Any], flat_key: str, *path: str) -> str:
+    flat_value = first_nonempty(context.get(flat_key))
+    if flat_value:
+        return flat_value
+    current: Any = context.get("protocol_details") or {}
+    for key in path:
+        if not isinstance(current, dict):
+            return ""
+        current = current.get(key)
+    return first_nonempty(current)
+
+
+def normalize_context_payload(context: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(context or {})
+    details = normalized.get("protocol_details")
+    if not isinstance(details, dict):
+        details = {}
+    else:
+        details = {key: value for key, value in details.items() if isinstance(value, dict)}
+
+    tcp = dict(details.get("tcp") or {})
+    udp = dict(details.get("udp") or {})
+    dns = dict(details.get("dns") or {})
+    http = dict(details.get("http") or {})
+    tls = dict(details.get("tls") or {})
+    icmp = dict(details.get("icmp") or {})
+    arp = dict(details.get("arp") or {})
+    wlan = dict(details.get("wlan") or {})
+    btle = dict(details.get("btle") or {})
+
+    def promote(flat_key: str, target: Dict[str, Any], nested_key: str) -> None:
+        value = first_nonempty(normalized.get(flat_key), target.get(nested_key))
+        if value:
+            normalized[flat_key] = value
+            target[nested_key] = value
+
+    promote("tcp_srcport", tcp, "srcport")
+    promote("tcp_dstport", tcp, "dstport")
+    promote("tcp_stream", tcp, "stream")
+    promote("tcp_flags", tcp, "flags")
+    promote("tcp_expert", tcp, "expert")
+    promote("udp_srcport", udp, "srcport")
+    promote("udp_dstport", udp, "dstport")
+    promote("dns_name", dns, "query_name")
+    promote("dns_query_type", dns, "query_type")
+    promote("dns_response_code", dns, "response_code")
+    promote("dns_answer_count", dns, "answer_count")
+    promote("http_host", http, "host")
+    promote("http_method", http, "method")
+    promote("http_request_uri", http, "request_uri")
+    promote("http_response_code", http, "response_code")
+    promote("tls_sni", tls, "server_name")
+    promote("tls_handshake_type", tls, "handshake_type")
+    promote("tls_record_version", tls, "record_version")
+    promote("icmp_type", icmp, "type")
+    promote("icmp_code", icmp, "code")
+    promote("arp_opcode", arp, "opcode")
+    promote("arp_src_proto_ipv4", arp, "src_proto_ipv4")
+    promote("arp_dst_proto_ipv4", arp, "dst_proto_ipv4")
+    promote("arp_src_hw_mac", arp, "src_hw_mac")
+    promote("arp_dst_hw_mac", arp, "dst_hw_mac")
+    promote("wlan_sa", wlan, "sa")
+    promote("wlan_da", wlan, "da")
+    promote("wlan_ra", wlan, "ra")
+    promote("wlan_ta", wlan, "ta")
+    promote("wlan_bssid", wlan, "bssid")
+    promote("wlan_ssid", wlan, "ssid")
+    promote("wlan_type_subtype", wlan, "type_subtype")
+    promote("wlan_channel", wlan, "channel")
+    promote("wlan_signal_dbm", wlan, "signal_dbm")
+    promote("wlan_data_rate", wlan, "data_rate")
+    promote("btcommon_addr", btle, "address")
+    promote("btatt_opcode", btle, "att_opcode")
+    promote("btatt_handle", btle, "att_handle")
+    promote("btl2cap_cid", btle, "l2cap_cid")
+
+    normalized["protocol_details"] = {
+        "tcp": tcp,
+        "udp": udp,
+        "dns": dns,
+        "http": http,
+        "tls": tls,
+        "icmp": icmp,
+        "arp": arp,
+        "wlan": wlan,
+        "btle": btle,
+    }
+
+    normalized["eth_src"] = first_nonempty(normalized.get("eth_src"), normalized.get("wlan_sa"), normalized.get("wlan_ta"))
+    normalized["eth_dst"] = first_nonempty(normalized.get("eth_dst"), normalized.get("wlan_da"), normalized.get("wlan_ra"))
+    normalized["selected_ip"] = first_nonempty(normalized.get("selected_ip"), normalized.get("ip_src"))
+    normalized["selected_ipv6"] = first_nonempty(normalized.get("selected_ipv6"), normalized.get("ipv6_src"))
+    normalized["selected_mac"] = first_nonempty(
+        normalized.get("selected_mac"),
+        normalized.get("wlan_sa"),
+        normalized.get("wlan_ta"),
+        normalized.get("btcommon_addr"),
+        normalized.get("eth_src"),
+    )
+    normalized["payload_version"] = first_nonempty(
+        normalized.get("payload_version"),
+        normalized.get("context_payload_version"),
+        "1.8.0" if any(normalized.get(key) for key in ["tcp_stream", "dns_query_type", "http_method", "tls_sni", "icmp_type", "arp_opcode", "wlan_bssid", "btcommon_addr"]) or any(details.values()) else "",
+    )
+    normalized["context_schema"] = first_nonempty(
+        normalized.get("context_schema"),
+        "protocol_native_v1" if normalized.get("payload_version") else "",
+    )
+    return normalized
+
+
 def infer_packet_protocol(context: Dict[str, Any]) -> str:
     candidates = [
         context.get("packet_protocol"),
+        context.get("protocol_identity"),
         context.get("protocol_hint"),
+        "wlan" if any(context.get(key) for key in ["wlan_sa", "wlan_da", "wlan_ra", "wlan_ta", "wlan_bssid", "wlan_ssid"]) else None,
+        "btle" if context.get("btcommon_addr") or protocol_detail(context, "btcommon_addr", "btle", "address") else None,
         "dns" if context.get("dns_name") else None,
         "http" if context.get("http_host") else None,
+        "tls" if context.get("tls_sni") or protocol_detail(context, "tls_sni", "tls", "server_name") else None,
+        "icmp" if context.get("icmp_type") or context.get("icmp_code") else None,
+        "arp" if context.get("arp_opcode") else None,
         "tcp" if context.get("tcp_srcport") or context.get("tcp_dstport") else None,
         "udp" if context.get("udp_srcport") or context.get("udp_dstport") else None,
         "ip" if context.get("selected_ip") else None,
@@ -167,10 +846,194 @@ def infer_packet_protocol(context: Dict[str, Any]) -> str:
     return "packet"
 
 
+def protocol_summary_details(context: Dict[str, Any]) -> str:
+    proto = infer_packet_protocol(context).lower()
+    if proto == "dns":
+        parts = []
+        if protocol_detail(context, "dns_name", "dns", "query_name"):
+            parts.append(f"Query {protocol_detail(context, 'dns_name', 'dns', 'query_name')}")
+        if protocol_detail(context, "dns_query_type", "dns", "query_type"):
+            parts.append(f"type {protocol_detail(context, 'dns_query_type', 'dns', 'query_type')}")
+        if protocol_detail(context, "dns_response_code", "dns", "response_code"):
+            parts.append(f"rcode {protocol_detail(context, 'dns_response_code', 'dns', 'response_code')}")
+        if protocol_detail(context, "dns_answer_count", "dns", "answer_count"):
+            parts.append(f"answers {protocol_detail(context, 'dns_answer_count', 'dns', 'answer_count')}")
+        return " · ".join(parts)
+    if proto == "http":
+        parts = []
+        method = protocol_detail(context, "http_method", "http", "method")
+        host = protocol_detail(context, "http_host", "http", "host")
+        uri = protocol_detail(context, "http_request_uri", "http", "request_uri")
+        code = protocol_detail(context, "http_response_code", "http", "response_code")
+        if method or host or uri:
+            request = " ".join(part for part in [method, uri] if part).strip()
+            if host:
+                request = f"{request} @ {host}".strip()
+            if request:
+                parts.append(request)
+        if code:
+            parts.append(f"response {code}")
+        return " · ".join(parts)
+    if proto == "tls":
+        parts = []
+        if protocol_detail(context, "tls_sni", "tls", "server_name"):
+            parts.append(f"SNI {protocol_detail(context, 'tls_sni', 'tls', 'server_name')}")
+        if protocol_detail(context, "tls_handshake_type", "tls", "handshake_type"):
+            parts.append(f"handshake {protocol_detail(context, 'tls_handshake_type', 'tls', 'handshake_type')}")
+        if protocol_detail(context, "tls_record_version", "tls", "record_version"):
+            parts.append(f"version {protocol_detail(context, 'tls_record_version', 'tls', 'record_version')}")
+        return " · ".join(parts)
+    if proto == "tcp":
+        parts = []
+        if protocol_detail(context, "tcp_stream", "tcp", "stream"):
+            parts.append(f"stream {protocol_detail(context, 'tcp_stream', 'tcp', 'stream')}")
+        if protocol_detail(context, "tcp_flags", "tcp", "flags"):
+            parts.append(protocol_detail(context, "tcp_flags", "tcp", "flags"))
+        if protocol_detail(context, "tcp_expert", "tcp", "expert"):
+            parts.append(protocol_detail(context, "tcp_expert", "tcp", "expert"))
+        return " · ".join(parts)
+    if proto == "icmp":
+        parts = []
+        if protocol_detail(context, "icmp_type", "icmp", "type"):
+            parts.append(f"type {protocol_detail(context, 'icmp_type', 'icmp', 'type')}")
+        if protocol_detail(context, "icmp_code", "icmp", "code"):
+            parts.append(f"code {protocol_detail(context, 'icmp_code', 'icmp', 'code')}")
+        return " · ".join(parts)
+    if proto == "arp":
+        parts = []
+        if protocol_detail(context, "arp_opcode", "arp", "opcode"):
+            parts.append(f"op {protocol_detail(context, 'arp_opcode', 'arp', 'opcode')}")
+        sender = first_nonempty(
+            protocol_detail(context, "arp_src_proto_ipv4", "arp", "src_proto_ipv4"),
+            protocol_detail(context, "arp_src_hw_mac", "arp", "src_hw_mac"),
+        )
+        target = first_nonempty(
+            protocol_detail(context, "arp_dst_proto_ipv4", "arp", "dst_proto_ipv4"),
+            protocol_detail(context, "arp_dst_hw_mac", "arp", "dst_hw_mac"),
+        )
+        if sender:
+            parts.append(f"sender {sender}")
+        if target:
+            parts.append(f"target {target}")
+        return " · ".join(parts)
+    if proto == "wlan":
+        parts = []
+        if protocol_detail(context, "wlan_ssid", "wlan", "ssid"):
+            parts.append(f"SSID {protocol_detail(context, 'wlan_ssid', 'wlan', 'ssid')}")
+        if protocol_detail(context, "wlan_bssid", "wlan", "bssid"):
+            parts.append(f"BSSID {protocol_detail(context, 'wlan_bssid', 'wlan', 'bssid')}")
+        if protocol_detail(context, "wlan_type_subtype", "wlan", "type_subtype"):
+            subtype = protocol_detail(context, "wlan_type_subtype", "wlan", "type_subtype")
+            subtype_label = wlan_subtype_label(subtype)
+            if subtype_label:
+                parts.append(f"{subtype_label} ({canonical_wlan_subtype(subtype)})")
+            else:
+                parts.append(f"subtype {subtype}")
+        if protocol_detail(context, "wlan_channel", "wlan", "channel"):
+            parts.append(f"channel {protocol_detail(context, 'wlan_channel', 'wlan', 'channel')}")
+        if protocol_detail(context, "wlan_signal_dbm", "wlan", "signal_dbm"):
+            parts.append(f"signal {protocol_detail(context, 'wlan_signal_dbm', 'wlan', 'signal_dbm')} dBm")
+        if protocol_detail(context, "wlan_data_rate", "wlan", "data_rate"):
+            parts.append(f"rate {protocol_detail(context, 'wlan_data_rate', 'wlan', 'data_rate')}")
+        return " · ".join(parts)
+    if proto == "btle":
+        parts = []
+        if protocol_detail(context, "btcommon_addr", "btle", "address"):
+            parts.append(f"peer {protocol_detail(context, 'btcommon_addr', 'btle', 'address')}")
+        if protocol_detail(context, "btatt_opcode", "btle", "att_opcode"):
+            parts.append(f"ATT {protocol_detail(context, 'btatt_opcode', 'btle', 'att_opcode')}")
+        if protocol_detail(context, "btl2cap_cid", "btle", "l2cap_cid"):
+            parts.append(f"L2CAP {protocol_detail(context, 'btl2cap_cid', 'btle', 'l2cap_cid')}")
+        return " · ".join(parts)
+    return ""
+
+
+def inferred_guidance_kind(label: str = "", prompt: str = "", explicit_kind: str = "") -> str:
+    kind = str(explicit_kind or "").strip()
+    if kind and kind not in {"recommended_step", "playbook_ai_recommendation"}:
+        return kind
+    if kind == "playbook_ai_recommendation":
+        return "ask_ai_for_next_move"
+
+    combined = normalize(" ".join([label, prompt]))
+    if "follow" in combined and "stream" in combined:
+        return "follow_stream"
+    if "expert information" in combined or "expert warning" in combined or "expert-marked" in combined:
+        return "open_expert_information"
+    if "protocol hierarchy" in combined:
+        return "open_protocol_hierarchy"
+    if "endpoints" in combined:
+        return "open_endpoints"
+    if "conversations" in combined or "conversation" in combined:
+        return "open_conversations"
+    if "flow graph" in combined:
+        return "open_flow_graph"
+    if "io graph" in combined:
+        return "open_io_graph"
+    if "packet length" in combined:
+        return "open_packet_lengths"
+    if "rtt" in combined:
+        return "open_tcp_rtt_graph"
+    if "current filter" in combined or "filtered view" in combined or "different wireshark view" in combined:
+        return "review_current_filter"
+    if "all traffic involving" in combined or "this host" in combined or "this device" in combined or "this ip" in combined or "this mac" in combined:
+        return "scope_host_or_device"
+    if combined.startswith("explain") or "why is" in combined or "why does" in combined:
+        return "explain_packet"
+    if combined.startswith("show") or "filter" in combined:
+        return "apply_filter"
+    return kind or "generic"
+
+
+def rank_playbook_guidance_items(playbook: Optional[Playbook], items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not playbook or not items:
+        return items
+
+    preferred = {name: idx for idx, name in enumerate(playbook.preferred_guidance)}
+    fallback = {name: idx for idx, name in enumerate(playbook.fallback_guidance)}
+    indexed = list(enumerate(items))
+
+    def sort_key(entry: tuple[int, Dict[str, Any]]) -> tuple[int, int, int]:
+        idx, item = entry
+        kind = inferred_guidance_kind(
+            str(item.get("label") or item.get("title") or ""),
+            str(item.get("prompt") or item.get("instructions") or ""),
+            str(item.get("kind") or ""),
+        )
+        if kind in preferred:
+            return (0, preferred[kind], idx)
+        if kind in fallback:
+            return (2, fallback[kind], idx)
+        return (1, idx, idx)
+
+    return [item for _, item in sorted(indexed, key=sort_key)]
+
+
+def ranked_playbook_focus(playbook: Playbook) -> List[Dict[str, str]]:
+    return rank_playbook_guidance_items(playbook, [dict(item) for item in playbook.suggested_actions])
+
+
 def summary_from_context(context: Dict[str, Any]) -> Dict[str, str]:
     proto = infer_packet_protocol(context).upper()
-    src = context.get("ip_src") or context.get("ipv6_src") or context.get("eth_src") or context.get("selected_mac") or "(unknown)"
-    dst = context.get("ip_dst") or context.get("ipv6_dst") or context.get("eth_dst") or "(unknown)"
+    src = (
+        context.get("ip_src")
+        or context.get("ipv6_src")
+        or context.get("wlan_sa")
+        or context.get("wlan_ta")
+        or context.get("eth_src")
+        or context.get("btcommon_addr")
+        or context.get("selected_mac")
+        or "(unknown)"
+    )
+    dst = (
+        context.get("ip_dst")
+        or context.get("ipv6_dst")
+        or context.get("wlan_da")
+        or context.get("wlan_ra")
+        or context.get("eth_dst")
+        or context.get("wlan_bssid")
+        or "(unknown)"
+    )
     return {
         "frame": str(context.get("frame_number") or "(unknown)"),
         "protocol": proto,
@@ -179,6 +1042,136 @@ def summary_from_context(context: Dict[str, Any]) -> Dict[str, str]:
         "selected_ip": str(context.get("selected_ip") or context.get("selected_ipv6") or "(none)"),
         "selected_mac": str(context.get("selected_mac") or "(none)"),
         "current_filter": str(context.get("current_filter") or ""),
+        "details": protocol_summary_details(context),
+    }
+
+
+def baseline_snapshot_from_state(state: SessionState, note: str = "") -> Dict[str, Any]:
+    summary = summary_from_context(state.context)
+    return {
+        "saved_at": current_timestamp(),
+        "note": note,
+        "playbook_id": state.playbook_id or "",
+        "playbook_name": active_playbook(state).name if active_playbook(state) else "",
+        "summary": summary,
+        "comparison_keys": {
+            "protocol": str(state.context.get("packet_protocol") or state.context.get("protocol_hint") or ""),
+            "selected_ip": first_nonempty(state.context.get("selected_ip"), state.context.get("selected_ipv6")),
+            "selected_mac": str(state.context.get("selected_mac") or ""),
+            "current_filter": str(state.context.get("current_filter") or ""),
+            "dns_name": protocol_detail(state.context, "dns_name", "dns", "query_name"),
+            "http_host": protocol_detail(state.context, "http_host", "http", "host"),
+            "http_uri": protocol_detail(state.context, "http_request_uri", "http", "request_uri"),
+            "wlan_ssid": protocol_detail(state.context, "wlan_ssid", "wlan", "ssid"),
+            "wlan_bssid": protocol_detail(state.context, "wlan_bssid", "wlan", "bssid"),
+            "wlan_channel": protocol_detail(state.context, "wlan_channel", "wlan", "channel"),
+            "wlan_signal_dbm": protocol_detail(state.context, "wlan_signal_dbm", "wlan", "signal_dbm"),
+            "wlan_data_rate": protocol_detail(state.context, "wlan_data_rate", "wlan", "data_rate"),
+            "btcommon_addr": protocol_detail(state.context, "btcommon_addr", "btle", "address"),
+        },
+    }
+
+
+def baseline_actions(state: SessionState) -> List[Dict[str, str]]:
+    actions: List[Dict[str, str]] = []
+    if state.baseline_snapshot:
+        actions.append({
+            "id": "baseline_compare",
+            "label": "Compare to saved baseline",
+            "prompt": "",
+            "kind": "baseline_compare",
+        })
+        actions.append({
+            "id": "baseline_save",
+            "label": "Replace saved baseline with this view",
+            "prompt": "",
+            "kind": "baseline_save",
+        })
+        actions.append({
+            "id": "baseline_clear",
+            "label": "Clear saved baseline",
+            "prompt": "",
+            "kind": "baseline_clear",
+        })
+        return actions
+    actions.append({
+        "id": "baseline_save",
+        "label": "Save this view as baseline",
+        "prompt": "",
+        "kind": "baseline_save",
+    })
+    return actions
+
+
+def baseline_comparison_message(state: SessionState) -> Dict[str, Any]:
+    baseline = state.baseline_snapshot
+    if not baseline:
+        return {
+            "type": "assistant_text",
+            "text": "No saved baseline is available yet. Save the current view as a baseline first, then compare later packet contexts against it.",
+        }
+
+    current = summary_from_context(state.context)
+    saved = baseline.get("summary") or {}
+    saved_keys = baseline.get("comparison_keys") or {}
+
+    changed: List[str] = []
+    same: List[str] = []
+
+    def compare_field(label: str, current_value: str, saved_value: str) -> None:
+        current_text = str(current_value or "").strip()
+        saved_text = str(saved_value or "").strip()
+        if not current_text and not saved_text:
+            return
+        if current_text == saved_text:
+            same.append(f"{label}: {current_text}")
+        else:
+            changed.append(f"{label}: baseline `{saved_text or '(empty)'}` -> current `{current_text or '(empty)'}`")
+
+    compare_field("Protocol", current.get("protocol", ""), saved.get("protocol", ""))
+    compare_field("Source", current.get("source", ""), saved.get("source", ""))
+    compare_field("Destination", current.get("destination", ""), saved.get("destination", ""))
+    compare_field("Selected IP", current.get("selected_ip", ""), saved.get("selected_ip", ""))
+    compare_field("Selected MAC", current.get("selected_mac", ""), saved.get("selected_mac", ""))
+    compare_field("Current filter", current.get("current_filter", ""), saved.get("current_filter", ""))
+    compare_field("DNS name", protocol_detail(state.context, "dns_name", "dns", "query_name"), saved_keys.get("dns_name", ""))
+    compare_field("HTTP host", protocol_detail(state.context, "http_host", "http", "host"), saved_keys.get("http_host", ""))
+    compare_field("HTTP URI", protocol_detail(state.context, "http_request_uri", "http", "request_uri"), saved_keys.get("http_uri", ""))
+    compare_field("Wi-Fi SSID", protocol_detail(state.context, "wlan_ssid", "wlan", "ssid"), saved_keys.get("wlan_ssid", ""))
+    compare_field("Wi-Fi BSSID", protocol_detail(state.context, "wlan_bssid", "wlan", "bssid"), saved_keys.get("wlan_bssid", ""))
+    compare_field("Wi-Fi channel", protocol_detail(state.context, "wlan_channel", "wlan", "channel"), saved_keys.get("wlan_channel", ""))
+    compare_field("Wi-Fi signal", protocol_detail(state.context, "wlan_signal_dbm", "wlan", "signal_dbm"), saved_keys.get("wlan_signal_dbm", ""))
+    compare_field("Wi-Fi data rate", protocol_detail(state.context, "wlan_data_rate", "wlan", "data_rate"), saved_keys.get("wlan_data_rate", ""))
+    compare_field("BLE peer", protocol_detail(state.context, "btcommon_addr", "btle", "address"), saved_keys.get("btcommon_addr", ""))
+
+    lines = [
+        f"Baseline saved at: {baseline.get('saved_at', '')}",
+    ]
+    if baseline.get("note"):
+        lines.append(f"Baseline note: {baseline['note']}")
+    if baseline.get("playbook_name"):
+        lines.append(f"Baseline playbook: {baseline['playbook_name']}")
+    lines.extend(["", "What changed:"])
+    if changed:
+        lines.extend([f"- {item}" for item in changed])
+    else:
+        lines.append("- No major context fields changed from the saved baseline.")
+    lines.extend(["", "What stayed similar:"])
+    if same:
+        lines.extend([f"- {item}" for item in same[:5]])
+    else:
+        lines.append("- No major context fields stayed identical enough to call out.")
+    takeaway = "The current view still looks close to the saved baseline." if not changed else "Use the changed fields to decide whether this is a normal variation, a broader scope shift, or a genuinely new anomaly."
+    lines.extend(["", "Analyst takeaway:", takeaway])
+    return {
+        "type": "explanation",
+        "title": "Baseline comparison",
+        "text": "\n".join(lines),
+        "provider": "rule_based",
+        "model": "builtin",
+        "response_source": "rule_based",
+        "request_mode": "baseline",
+        "suggested_actions": guided_next_steps(state),
     }
 
 
@@ -214,7 +1207,7 @@ def generic_mode_text(state: SessionState) -> str:
 
 
 def playbook_guidance_summary(playbook: Playbook) -> str:
-    focus = [item["label"] for item in playbook.suggested_actions[:3]]
+    focus = [item["label"] for item in ranked_playbook_focus(playbook)[:3]]
     if not focus:
         return playbook.description
     if len(focus) == 1:
@@ -228,13 +1221,13 @@ def playbook_guidance_summary(playbook: Playbook) -> str:
 
 def playbook_stage_text(playbook: Playbook) -> str:
     if playbook.playbook_id == "tcp_issue":
-        return "Why this sequence: first isolate the TCP conversation, then explain the packet role, then check retransmissions, duplicate ACKs, resets, or other stall indicators so you can tell which side is failing, whether the issue repeats, and whether the symptoms look client-side, server-side, or in transit."
+        return "Why this sequence: first isolate the TCP conversation, then explain the packet role, then check connection setup, retransmissions, duplicate ACKs, resets, zero-window behavior, or other stall indicators so you can tell which side is failing, whether the issue repeats, and whether the symptoms look client-side, server-side, or in transit."
     if playbook.playbook_id == "dns_investigation":
-        return "Why this sequence: first explain the DNS packet, then scope the name, host, or exchange involved, then confirm whether the issue looks like query failure, recursion delay, missing response, or noisy background traffic."
+        return "Why this sequence: first explain the DNS packet, then scope the name, host, or exchange involved, then confirm whether the issue looks like resolver-path trouble, missing response, caching behavior, recursion delay, or noisy background traffic."
     if playbook.playbook_id == "web_application_issue":
-        return "Why this sequence: first explain the web packet and scope the HTTP exchange, then isolate the host or conversation, then decide whether the issue looks like missing content, redirection, latency, or application-side behavior."
+        return "Why this sequence: first explain the web packet and scope the HTTP exchange, then isolate the host or conversation, then decide whether the issue looks like missing content, redirection, intermediary or caching behavior, latency, or application-side behavior."
     if playbook.playbook_id == "suspicious_traffic":
-        return "Why this sequence: first explain why the packet stands out, then scope the host or device, then isolate expert-marked or repeated traffic so you can decide whether the activity looks routine, misconfigured, or worth escalation."
+        return "Why this sequence: first explain why the packet stands out, then scope the host or device, then isolate expert-marked, control-plane, or repeated traffic so you can decide whether the activity looks routine, misconfigured, path-related, or worth escalation."
     if playbook.playbook_id == "wifi_investigation":
         return "Why this sequence: first identify the frame type and device roles, then scope one wireless device or exchange, then narrow into authentication, association, roaming, or retransmission behavior so you can tell whether the issue is one client, one AP, or wider RF noise."
     if playbook.playbook_id == "btle_investigation":
@@ -374,7 +1367,7 @@ def make_session(context: Dict[str, Any]) -> SessionState:
     if provider != "rule_based" and not PROVIDERS[provider].available():
         provider = "rule_based"
     model = DEFAULT_MODEL if DEFAULT_MODEL in PROVIDERS[provider].models else PROVIDERS[provider].models[0]
-    context = dict(context)
+    context = normalize_context_payload(context)
     context["packet_protocol"] = infer_packet_protocol(context)
     state = SessionState(
         session_id=sid,
@@ -383,7 +1376,8 @@ def make_session(context: Dict[str, Any]) -> SessionState:
         settings={"provider": provider, "model": model},
     )
     state.backend_confirmed = not bool(available_ai_provider_ids())
-    state.suggested_actions = guided_next_steps(state)
+    reset_investigation_state(state)
+    refresh_guidance_state(state)
     state.messages.extend(initial_messages(state))
     SESSIONS[sid] = state
     return state
@@ -600,27 +1594,27 @@ def playbook_filter_focus(playbook: Optional[Playbook]) -> List[str]:
         ]
     if playbook.playbook_id == "tcp_issue":
         return [
-            "Which side starts, stalls, resets, retransmits, or acknowledges abnormally",
+            "Which side starts, stalls, resets, retransmits, zero-windows, or acknowledges abnormally",
             "Whether the packets stay inside one TCP conversation or show a wider repeated failure pattern",
-            "What happens immediately before and after the filtered packets so you can confirm timing and impact",
+            "What happens immediately before and after the filtered packets so you can confirm connection setup, timing, and impact",
         ]
     if playbook.playbook_id == "dns_investigation":
         return [
-            "Which client, resolver, or upstream peer owns the query and response flow",
-            "Whether the packets show a clean question-and-answer pattern, missing response, retry, or unusual record type",
-            "Whether the traffic isolates one DNS problem or still mixes normal background name lookups with the issue",
+            "Which client, local resolver, or upstream peer owns the query and response flow",
+            "Whether the packets show a clean question-and-answer pattern, missing response, retry, negative answer, or unusual record type",
+            "Whether the traffic isolates one DNS problem or still mixes normal background name lookups, caching effects, or resolver-path behavior with the issue",
         ]
     if playbook.playbook_id == "web_application_issue":
         return [
-            "Which host pair, request, or response is central to the web problem",
-            "Whether the packets show missing content, unexpected redirects, slow server response, or repeated retries",
-            "Whether the issue looks application-side, network-side, or tied to supporting DNS or content-provider traffic",
+            "Which host pair, request, response, or Host header is central to the web problem",
+            "Whether the packets show missing content, unexpected redirects, proxy/cache effects, slow server response, or repeated retries",
+            "Whether the issue looks application-side, intermediary-side, network-side, or tied to supporting DNS or content-provider traffic",
         ]
     if playbook.playbook_id == "suspicious_traffic":
         return [
-            "Unexpected peers, unusual ports, repeated retries, resets, or expert-marked packets",
+            "Unexpected peers, unusual ports, repeated retries, resets, ARP/DHCP/ICMP anomalies, or expert-marked packets",
             "Whether the traffic stays on one host or expands to more internal or external systems",
-            "Whether the packets look like normal service traffic, noisy misconfiguration, scanning, or something worth escalation",
+            "Whether the packets look like normal service traffic, noisy misconfiguration, address/path control trouble, scanning, or something worth escalation",
         ]
     if playbook.playbook_id == "wifi_investigation":
         return [
@@ -644,10 +1638,14 @@ def playbook_filter_focus(playbook: Optional[Playbook]) -> List[str]:
 def detect_filter_tags(filter_text: str) -> set[str]:
     lower = str(filter_text or "").lower()
     tags: set[str] = set()
+    if "tcp.flags.syn == 1" in lower:
+        tags.add("tcp_syn")
     if "tcp.analysis.retransmission" in lower:
         tags.add("tcp_retransmission")
     if "tcp.analysis.duplicate_ack" in lower:
         tags.add("tcp_duplicate_ack")
+    if "tcp.analysis.zero_window" in lower:
+        tags.add("tcp_zero_window")
     if "tcp.flags.reset == 1" in lower:
         tags.add("tcp_reset")
     if "_ws.expert" in lower:
@@ -662,6 +1660,48 @@ def detect_filter_tags(filter_text: str) -> set[str]:
         tags.add("ip_scope")
     if any(token in lower for token in ["eth.addr ==", "wlan.addr ==", "wlan.sa ==", "wlan.da ==", "btcommon.addr =="]):
         tags.add("mac_scope")
+    if "wlan.bssid ==" in lower:
+        tags.add("wifi_bssid_scope")
+    if 'wlan.ssid ==' in lower:
+        tags.add("wifi_ssid_scope")
+    if 'dns.qry.name ==' in lower:
+        tags.add("dns_name_scope")
+    if 'http.host ==' in lower:
+        tags.add("http_host_scope")
+    if "wlan.fc.type == 0" in lower:
+        tags.add("wifi_management")
+    if "wlan.fc.type == 1" in lower:
+        tags.add("wifi_control")
+    if "wlan.fc.type == 2" in lower:
+        tags.add("wifi_data")
+    if "wlan.fc.type_subtype == 0x08" in lower:
+        tags.add("wifi_beacon")
+    if "wlan.fc.type_subtype == 0x04" in lower or "wlan.fc.type_subtype == 0x05" in lower:
+        tags.add("wifi_probe")
+    if "wlan.fc.type_subtype == 0x0b" in lower or "wlan.fc.type_subtype == 0x00" in lower or "wlan.fc.type_subtype == 0x01" in lower or "wlan.fc.type_subtype == 0x02" in lower or "wlan.fc.type_subtype == 0x03" in lower:
+        tags.add("wifi_auth_assoc")
+    if "wlan.fc.type_subtype == 0x00" in lower or "wlan.fc.type_subtype == 0x01" in lower or "wlan.fc.type_subtype == 0x02" in lower or "wlan.fc.type_subtype == 0x03" in lower:
+        tags.add("wifi_assoc")
+    if "wlan.fc.type_subtype == 0x0a" in lower or "wlan.fc.type_subtype == 0x0c" in lower:
+        tags.add("wifi_deauth")
+    if "wlan_radio.channel ==" in lower:
+        tags.add("wifi_channel_scope")
+    if "http.response" in lower:
+        tags.add("http_response")
+    if "http.response.code >= 300" in lower and "http.response.code < 400" in lower:
+        tags.add("http_redirect")
+    if "arp" in lower:
+        tags.add("arp")
+    if re.search(r"\bicmp\b", lower):
+        tags.add("icmp")
+    if "dhcp" in lower or "bootp" in lower:
+        tags.add("dhcp")
+    if "ip.flags.mf == 1" in lower or "ip.frag_offset > 0" in lower:
+        tags.add("ip_fragments")
+    if re.search(r"\bdns\b", lower):
+        tags.add("dns")
+    if re.search(r"\bhttp\b", lower):
+        tags.add("http")
     if re.search(r"\btcp\b", lower):
         tags.add("tcp")
     if re.search(r"\bwlan\b", lower):
@@ -673,16 +1713,22 @@ def detect_filter_tags(filter_text: str) -> set[str]:
 
 def summarize_applied_filter(filter_text: str) -> str:
     tags = detect_filter_tags(filter_text)
+    if "tcp_syn" in tags and "tcp_conversation" in tags:
+        return "This filter isolates TCP SYN and connection-setup packets within one bidirectional TCP conversation."
     if "tcp_retransmission" in tags and "tcp_conversation" in tags:
         return "This filter isolates TCP retransmissions within one bidirectional TCP conversation."
     if "tcp_duplicate_ack" in tags and "tcp_conversation" in tags:
         return "This filter isolates TCP duplicate ACKs within one bidirectional TCP conversation."
     if "tcp_reset" in tags and "tcp_conversation" in tags:
         return "This filter isolates TCP resets within one bidirectional TCP conversation."
+    if "tcp_zero_window" in tags:
+        return "This filter isolates TCP zero-window behavior."
     if "tcp_conversation" in tags:
         return "This filter isolates one bidirectional TCP conversation."
     if "udp_conversation" in tags:
         return "This filter isolates one bidirectional UDP conversation."
+    if "tcp_syn" in tags:
+        return "This filter isolates TCP SYN and connection-setup packets."
     if "tcp_retransmission" in tags:
         return "This filter isolates TCP retransmissions."
     if "tcp_duplicate_ack" in tags:
@@ -691,8 +1737,44 @@ def summarize_applied_filter(filter_text: str) -> str:
         return "This filter isolates TCP resets."
     if "expert" in tags:
         return "This filter isolates Wireshark expert-marked packets."
+    if "dns_name_scope" in tags:
+        return "This filter scopes DNS traffic to one queried name."
+    if "http_host_scope" in tags:
+        return "This filter scopes HTTP traffic to one Host header value."
+    if "http_redirect" in tags:
+        return "This filter isolates HTTP redirect responses."
+    if "http_response" in tags:
+        return "This filter isolates HTTP responses."
+    if "arp" in tags:
+        return "This filter isolates ARP traffic."
+    if "icmp" in tags:
+        return "This filter isolates ICMP traffic."
+    if "dhcp" in tags:
+        return "This filter isolates DHCP or BOOTP traffic."
+    if "ip_fragments" in tags:
+        return "This filter isolates IPv4 fragmentation-related traffic."
+    if "wifi_beacon" in tags:
+        return "This filter isolates 802.11 beacon frames."
+    if "wifi_probe" in tags:
+        return "This filter isolates 802.11 probe request and response frames."
     if "wifi" in tags and "mac_scope" in tags:
         return "This filter scopes traffic to one wireless device-focused view."
+    if "wifi_bssid_scope" in tags:
+        return "This filter scopes traffic to one wireless BSSID."
+    if "wifi_ssid_scope" in tags:
+        return "This filter scopes traffic to one wireless SSID."
+    if "wifi_management" in tags:
+        return "This filter isolates 802.11 management frames."
+    if "wifi_control" in tags:
+        return "This filter isolates 802.11 control frames."
+    if "wifi_data" in tags:
+        return "This filter isolates 802.11 data frames."
+    if "wifi_auth_assoc" in tags:
+        return "This filter isolates authentication and association management frames."
+    if "wifi_deauth" in tags:
+        return "This filter isolates deauthentication and disassociation management frames."
+    if "wifi_channel_scope" in tags:
+        return "This filter isolates traffic captured on one wireless channel."
     if "btle" in tags and "mac_scope" in tags:
         return "This filter scopes traffic to one BLE device-focused view."
     if "ip_scope" in tags:
@@ -773,6 +1855,7 @@ def playbook_low_confidence_followup_steps(state: SessionState) -> List[Dict[str
             "label": "Explain the current filter and this packet together",
             "prompt": "Explain this packet in the context of the current filter",
         })
+    steps.extend(baseline_actions(state))
     steps.append(playbook_selector_action("Choose a different playbook"))
     steps.append(clear_playbook_action())
     return steps
@@ -787,6 +1870,7 @@ def playbook_steps_after_ai_guidance(state: SessionState, playbook: Playbook) ->
             "label": "Explain the current filter and this packet together",
             "prompt": "Explain this packet in the context of the current filter",
         })
+    steps.extend(baseline_actions(state))
     steps.append(playbook_selector_action("Choose a different playbook"))
     steps.append(clear_playbook_action())
     return dedupe_action_items(steps, limit=4)
@@ -809,15 +1893,31 @@ def playbook_step_reason(state: SessionState, playbook: Playbook, filter_text: s
     if low_confidence:
         return f"Why this step: {low_confidence} AI guidance is recommended early so SharkBot can account for context that the rule engine cannot safely infer."
     if playbook.playbook_id == "tcp_issue":
+        if "tcp_syn" in tags:
+            return f"Why this step: connection setup packets are already isolated, so the next useful pivot is whether the session progresses into loss, delay, or an immediate refusal. {next_label} moves the investigation past the handshake."
         if "tcp_conversation" in tags and "tcp_retransmission" not in tags and "tcp_duplicate_ack" not in tags and "tcp_reset" not in tags:
             return f"Why this step: you already isolated the TCP conversation, so the next useful pivot is packet-loss evidence inside that same conversation. {next_label} helps confirm whether the slowdown or failure is tied to retransmission behavior."
         if "tcp_retransmission" in tags:
             return f"Why this step: retransmissions are already isolated, so the next useful pivot is how the peer reacts. {next_label} helps you compare loss symptoms with ACK behavior instead of repeating the same view."
         if "tcp_duplicate_ack" in tags:
             return f"Why this step: duplicate ACKs are already isolated, so the next useful pivot is whether retransmissions, resets, or sequence progression explain them. {next_label} moves the investigation forward."
+        if "tcp_zero_window" in tags:
+            return f"Why this step: zero-window behavior is already isolated, so the next useful pivot is whether the stall is receiver-side flow control or a wider application pause. {next_label} helps you confirm that."
         if "tcp_reset" in tags:
             return f"Why this step: once resets are isolated, the next useful move is to explain that filtered view and determine which side terminated the flow and why."
+    if playbook.playbook_id == "dns_investigation":
+        if "dns_name_scope" in tags:
+            return f"Why this step: one queried name is already isolated, so the next useful pivot is whether the answers, failures, or retries fit one resolver path. {next_label} helps you confirm that."
+        if "udp_conversation" in tags and "dns" in tags:
+            return f"Why this step: you already narrowed the DNS exchange to one conversation, so the next useful pivot is whether the name, answer pattern, or caching behavior explains the issue. {next_label} keeps the resolver path in scope."
+    if playbook.playbook_id == "web_application_issue":
+        if "http_host_scope" in tags:
+            return f"Why this step: one HTTP host is already isolated, so the next useful pivot is whether one request/response chain or redirect path explains the problem. {next_label} keeps that web context focused."
+        if "http_redirect" in tags:
+            return f"Why this step: redirect responses are already isolated, so the next useful move is to explain whether the redirect chain is expected or part of the failure."
     if playbook.playbook_id == "suspicious_traffic":
+        if "arp" in tags or "icmp" in tags or "dhcp" in tags or "ip_fragments" in tags:
+            return f"Why this step: the current filter already isolates a control-plane clue. {next_label} helps you decide whether it reflects expected address/path behavior, misconfiguration, or something more suspicious."
         return f"Why this step: the current filter gives you scope. {next_label} helps you decide whether the packet is expected service traffic, a noisy mistake, or an outlier that needs escalation."
     if playbook.playbook_id == "wifi_investigation":
         return f"Why this step: the current filter narrows the wireless view. {next_label} helps you identify device roles and determine whether the issue is tied to one client, one BSSID, or one management exchange."
@@ -827,113 +1927,7 @@ def playbook_step_reason(state: SessionState, playbook: Playbook, filter_text: s
 
 
 def obvious_step_after_filter(state: SessionState, playbook: Playbook, filter_text: str) -> Optional[Dict[str, str]]:
-    tags = detect_filter_tags(filter_text)
-    if playbook.playbook_id == "tcp_issue":
-        if "tcp_retransmission" in tags:
-            return {
-                "id": "after_filter_tcp_dupacks",
-                "label": "Recommended next step: Show duplicate ACKs in this TCP conversation",
-                "prompt": contextualize_playbook_prompt(state, "Show duplicate ACKs in this TCP conversation"),
-                "kind": "recommended_step",
-            }
-        if "tcp_duplicate_ack" in tags:
-            return {
-                "id": "after_filter_tcp_retransmission",
-                "label": "Recommended next step: Show retransmissions in this TCP conversation",
-                "prompt": contextualize_playbook_prompt(state, "Show retransmissions in this TCP conversation"),
-                "kind": "recommended_step",
-            }
-        if "tcp_reset" in tags:
-            return {
-                "id": "after_filter_tcp_explain",
-                "label": "Recommended next step: Explain this TCP packet in the context of the current filter",
-                "prompt": "Explain this packet in the context of the current filter",
-                "kind": "recommended_step",
-            }
-        if "tcp_conversation" in tags:
-            return {
-                "id": "after_filter_tcp_retransmissions",
-                "label": "Recommended next step: Show retransmissions in this TCP conversation",
-                "prompt": contextualize_playbook_prompt(state, "Show retransmissions in this TCP conversation"),
-                "kind": "recommended_step",
-            }
-        if "tcp" in tags:
-            return {
-                "id": "after_filter_tcp_conversation",
-                "label": "Recommended next step: Show this TCP conversation",
-                "prompt": contextualize_playbook_prompt(state, "Show this TCP conversation"),
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "dns_investigation":
-        if "ip_scope" in tags:
-            return {
-                "id": "after_filter_dns_explain",
-                "label": "Recommended next step: Explain this DNS packet in the current filtered view",
-                "prompt": "Explain this packet in the context of the current filter",
-                "kind": "recommended_step",
-            }
-        if "udp_conversation" in tags:
-            return {
-                "id": "after_filter_dns_related_ip",
-                "label": "Recommended next step: Show all DNS traffic involving this IP",
-                "prompt": "Show all DNS traffic involving this IP",
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "web_application_issue":
-        if "tcp_conversation" in tags:
-            return {
-                "id": "after_filter_web_explain",
-                "label": "Recommended next step: Explain this packet in the context of the current web conversation",
-                "prompt": "Explain this packet in the context of the current filter",
-                "kind": "recommended_step",
-            }
-        if "ip_scope" in tags:
-            return {
-                "id": "after_filter_web_conversation",
-                "label": "Recommended next step: Show this web conversation",
-                "prompt": "Show the related HTTP conversation",
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "suspicious_traffic":
-        if "tcp_conversation" in tags or "udp_conversation" in tags:
-            return {
-                "id": "after_filter_suspicious_explain_current",
-                "label": "Recommended next step: Explain this packet in the current filtered view",
-                "prompt": "Explain this packet in the context of the current filter",
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "suspicious_traffic":
-        if "ip_scope" in tags or "mac_scope" in tags:
-            return {
-                "id": "after_filter_suspicious_expert",
-                "label": "Recommended next step: Show unusual or expert-marked packets",
-                "prompt": contextualize_playbook_prompt(state, "Show expert warnings"),
-                "kind": "recommended_step",
-            }
-        if "expert" in tags:
-            return {
-                "id": "after_filter_suspicious_explain",
-                "label": "Recommended next step: Why is this packet suspicious?",
-                "prompt": contextualize_playbook_prompt(state, "Why is this packet suspicious?"),
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "wifi_investigation":
-        if "mac_scope" in tags or "wifi" in tags:
-            return {
-                "id": "after_filter_wifi_explain",
-                "label": "Recommended next step: Explain this Wi-Fi packet",
-                "prompt": contextualize_playbook_prompt(state, "Explain this Wi-Fi packet"),
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "btle_investigation":
-        if "mac_scope" in tags or "btle" in tags:
-            return {
-                "id": "after_filter_btle_explain",
-                "label": "Recommended next step: Explain this BTLE packet",
-                "prompt": contextualize_playbook_prompt(state, "Explain this BTLE packet"),
-                "kind": "recommended_step",
-            }
-    return None
+    return resolve_guided_action_rule(state, playbook.filter_step_rules, filter_tags=set(detect_filter_tags(filter_text)))
 
 
 def playbook_steps_after_filter(
@@ -964,33 +1958,20 @@ def playbook_steps_after_filter(
         steps.append(ai_playbook_recommendation_action(state, playbook))
 
     excluded_prompts = {normalize(origin_prompt)} if origin_prompt else set()
-    for item in playbook.suggested_actions:
+    ranked_actions = rank_playbook_guidance_items(playbook, [dict(item) for item in playbook.suggested_actions])
+    for item in ranked_actions:
         prompt = contextualize_playbook_prompt(state, item["prompt"])
         label = item["label"]
-        if playbook.playbook_id == "tcp_issue" and "tcp_conversation" in tags:
-            if normalize(prompt) == normalize("Show retransmissions"):
-                prompt = contextualize_playbook_prompt(state, "Show retransmissions in this TCP conversation")
-                label = "Show retransmissions in this TCP conversation"
-            elif normalize(prompt) == normalize("Show duplicate ACKs"):
-                prompt = contextualize_playbook_prompt(state, "Show duplicate ACKs in this TCP conversation")
-                label = "Show duplicate ACKs in this TCP conversation"
-            elif normalize(prompt) == normalize("Show resets"):
-                prompt = contextualize_playbook_prompt(state, "Show resets in this TCP conversation")
-                label = "Show resets in this TCP conversation"
-            elif normalize(prompt) == normalize("Explain this TCP packet"):
-                prompt = "Explain this packet in the context of the current filter"
-                label = "Explain this TCP packet in the current filtered view"
-        elif playbook.playbook_id == "tcp_issue" and ("tcp_retransmission" in tags or "tcp_duplicate_ack" in tags or "tcp_reset" in tags):
-            if normalize(prompt) == normalize("Explain this TCP packet"):
-                prompt = "Explain this packet in the context of the current filter"
-                label = "Explain this TCP packet in the current filtered view"
+        action_kind = item.get("kind", "")
         if normalize(prompt) in excluded_prompts:
             continue
         steps.append({
             "id": f"{playbook.playbook_id}_{label.lower().replace(' ', '_')}",
             "label": label,
             "prompt": prompt,
+            **({"kind": action_kind} if action_kind else {}),
         })
+    steps.extend(baseline_actions(state))
     steps.append(clear_playbook_action())
     return dedupe_action_items(steps, limit=7)
 
@@ -1037,6 +2018,10 @@ def explain_filter_expression(state: SessionState, filter_text: str) -> Dict[str
         summary.append("This filter isolates TCP retransmissions.")
     if "tcp.analysis.duplicate_ack" in filter_text:
         summary.append("This filter isolates TCP duplicate ACKs.")
+    if "tcp.analysis.zero_window" in filter_text:
+        summary.append("This filter isolates TCP zero-window behavior.")
+    if "tcp.flags.syn == 1" in filter_text:
+        summary.append("This filter isolates TCP SYN and connection-setup packets.")
     if "tcp.flags.reset == 1" in filter_text:
         summary.append("This filter isolates TCP resets.")
     if "_ws.expert" in filter_text:
@@ -1053,8 +2038,44 @@ def explain_filter_expression(state: SessionState, filter_text: str) -> Dict[str
         summary.append("This filter keeps traffic centered on one MAC address.")
     if "wlan.addr ==" in filter_text or "wlan.sa ==" in filter_text or "wlan.da ==" in filter_text:
         summary.append("This filter keeps traffic centered on one wireless device address.")
+    if "wlan.bssid ==" in filter_text:
+        summary.append("This filter keeps traffic centered on one wireless BSSID.")
+    if 'dns.qry.name ==' in filter_text:
+        summary.append("This filter keeps traffic centered on one DNS queried name.")
+    if 'http.host ==' in filter_text:
+        summary.append("This filter keeps traffic centered on one HTTP Host header value.")
+    if 'wlan.ssid ==' in filter_text:
+        summary.append("This filter keeps traffic centered on one wireless SSID.")
+    if "wlan.fc.type == 0" in filter_text:
+        summary.append("This filter isolates 802.11 management frames.")
+    if "wlan.fc.type == 1" in filter_text:
+        summary.append("This filter isolates 802.11 control frames.")
+    if "wlan.fc.type == 2" in filter_text:
+        summary.append("This filter isolates 802.11 data frames.")
+    if "wlan.fc.type_subtype == 0x08" in filter_text:
+        summary.append("This filter isolates beacon frames.")
+    if "wlan.fc.type_subtype == 0x04" in filter_text or "wlan.fc.type_subtype == 0x05" in filter_text:
+        summary.append("This filter isolates probe request and response frames.")
+    if "http.response" in filter_text:
+        summary.append("This filter isolates HTTP responses.")
+    if "http.response.code >= 300" in filter_text and "http.response.code < 400" in filter_text:
+        summary.append("This filter isolates HTTP redirect responses.")
+    if "wlan.fc.type_subtype == 0x0A" in filter_text or "wlan.fc.type_subtype == 0x0C" in filter_text:
+        summary.append("This filter isolates deauthentication and disassociation frames.")
+    if "wlan.fc.type_subtype == 0x0B" in filter_text or "wlan.fc.type_subtype == 0x00" in filter_text or "wlan.fc.type_subtype == 0x01" in filter_text or "wlan.fc.type_subtype == 0x02" in filter_text or "wlan.fc.type_subtype == 0x03" in filter_text:
+        summary.append("This filter isolates authentication and association frames.")
+    if "wlan_radio.channel ==" in filter_text:
+        summary.append("This filter keeps traffic centered on one wireless channel.")
     if "btcommon.addr ==" in filter_text:
         summary.append("This filter keeps traffic centered on one BLE device address.")
+    if re.search(r"\barp\b", filter_text):
+        summary.append("This filter stays focused on ARP traffic.")
+    if re.search(r"\bicmp\b", filter_text):
+        summary.append("This filter stays focused on ICMP traffic.")
+    if "dhcp" in filter_text or "bootp" in filter_text:
+        summary.append("This filter stays focused on DHCP or BOOTP traffic.")
+    if "ip.flags.mf == 1" in filter_text or "ip.frag_offset > 0" in filter_text:
+        summary.append("This filter isolates IPv4 fragmentation-related traffic.")
     if re.search(r"\bwlan\b", filter_text):
         summary.append("This filter stays focused on 802.11 traffic.")
     if "btle" in filter_text or "btatt" in filter_text or "btl2cap" in filter_text:
@@ -1156,109 +2177,7 @@ def explain_filter_with_ai(state: SessionState, filter_text: str) -> Dict[str, A
 
 
 def obvious_playbook_next_step(state: SessionState, playbook: Playbook) -> Optional[Dict[str, str]]:
-    current_filter = state.context.get("current_filter") or ""
-    if playbook.playbook_id == "tcp_issue":
-        if state.context.get("tcp_srcport") or state.context.get("tcp_dstport"):
-            return {
-                "id": "recommended_tcp_conversation",
-                "label": "Recommended next step: Show this TCP conversation",
-                "prompt": "Show this TCP conversation",
-                "kind": "recommended_step",
-            }
-        return {
-            "id": "recommended_tcp_only",
-            "label": "Recommended next step: Show only TCP traffic",
-                "prompt": "Show only TCP traffic",
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "dns_investigation":
-        if state.context.get("dns_name"):
-            return {
-                "id": "recommended_dns_name_scope",
-                "label": "Recommended next step: Show all DNS traffic involving this queried name",
-                "prompt": "Show all DNS traffic involving this queried name",
-                "kind": "recommended_step",
-            }
-        if state.context.get("selected_ip") or state.context.get("selected_ipv6"):
-            return {
-                "id": "recommended_dns_ip_scope",
-                "label": "Recommended next step: Show all DNS traffic involving this IP",
-                "prompt": "Show all DNS traffic involving this IP",
-                "kind": "recommended_step",
-            }
-        return {
-            "id": "recommended_dns_only",
-            "label": "Recommended next step: Show only DNS traffic",
-            "prompt": "Show only DNS traffic",
-            "kind": "recommended_step",
-        }
-    if playbook.playbook_id == "web_application_issue":
-        if state.context.get("tcp_srcport") or state.context.get("tcp_dstport"):
-            return {
-                "id": "recommended_web_conversation",
-                "label": "Recommended next step: Show this web conversation",
-                "prompt": "Show the related HTTP conversation",
-                "kind": "recommended_step",
-            }
-        return {
-            "id": "recommended_web_only",
-            "label": "Recommended next step: Show only HTTP traffic",
-            "prompt": "Show only HTTP traffic",
-            "kind": "recommended_step",
-        }
-    if playbook.playbook_id == "suspicious_traffic":
-        if not current_filter:
-            return {
-                "id": "recommended_suspicious_explain",
-                "label": "Recommended next step: Why is this packet suspicious?",
-                "prompt": "Why is this packet suspicious?",
-                "kind": "recommended_step",
-            }
-        if state.context.get("selected_ip") or state.context.get("selected_ipv6"):
-            return {
-                "id": "recommended_scope_ip",
-                "label": "Recommended next step: Show all traffic involving this IP",
-                "prompt": "Show all traffic involving this IP",
-                "kind": "recommended_step",
-            }
-        if preferred_device_mac(state.context):
-            return {
-                "id": "recommended_scope_mac",
-                "label": "Recommended next step: Show all traffic involving this MAC",
-                "prompt": "Show all traffic involving this MAC",
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "wifi_investigation":
-        if not current_filter:
-            return {
-                "id": "recommended_wifi_explain",
-                "label": "Recommended next step: Explain this Wi-Fi packet",
-                "prompt": "Explain this Wi-Fi packet",
-                "kind": "recommended_step",
-            }
-        if preferred_device_mac(state.context):
-            return {
-                "id": "recommended_wifi_investigation_device",
-                "label": "Recommended next step: Show all traffic involving this wireless device",
-                "prompt": "Show all traffic involving this MAC",
-                "kind": "recommended_step",
-            }
-    if playbook.playbook_id == "btle_investigation":
-        if not current_filter:
-            return {
-                "id": "recommended_btle_explain",
-                "label": "Recommended next step: Explain this BTLE packet",
-                "prompt": "Explain this BTLE packet",
-                "kind": "recommended_step",
-            }
-        if preferred_device_mac(state.context):
-            return {
-                "id": "recommended_btle_investigation_device",
-                "label": "Recommended next step: Show all traffic involving this BLE device",
-                "prompt": "Show all traffic involving this MAC",
-                "kind": "recommended_step",
-            }
-    return None
+    return resolve_guided_action_rule(state, playbook.next_step_rules)
 
 
 def ai_playbook_recommendation_action(state: SessionState, playbook: Playbook) -> Dict[str, str]:
@@ -1294,14 +2213,17 @@ def guided_next_steps(state: SessionState) -> List[Dict[str, str]]:
             steps.append(recommended)
         else:
             steps.append(ai_playbook_recommendation_action(state, playbook))
-        for item in playbook.suggested_actions:
+        ranked_actions = rank_playbook_guidance_items(playbook, [dict(item) for item in playbook.suggested_actions])
+        for item in ranked_actions:
             steps.append({
                 "id": f"{playbook.playbook_id}_{item['label'].lower().replace(' ', '_')}",
                 "label": item["label"],
                 "prompt": contextualize_playbook_prompt(state, item["prompt"]),
+                **({"kind": item["kind"]} if item.get("kind") else {}),
             })
         if current_filter:
             add("Explain the current filter and this packet together", "Explain this packet in the context of the current filter")
+        steps.extend(baseline_actions(state))
         steps.append(clear_playbook_action())
         return dedupe_action_items(steps, limit=7)
 
@@ -1339,6 +2261,7 @@ def guided_next_steps(state: SessionState) -> List[Dict[str, str]]:
         add("Explain the current filter and this packet together", "Explain this packet in the context of the current filter")
     if PLAYBOOKS:
         steps.append(playbook_selector_action())
+    steps.extend(baseline_actions(state))
     steps.extend(ai_upgrade_suggestions(state.context, state.settings))
     return dedupe_action_items(steps, limit=7)
 
@@ -1503,12 +2426,63 @@ def build_filter(state: SessionState, original_text: str) -> Dict[str, Any]:
         clauses.append("tcp.analysis.retransmission")
     if "duplicate ack" in text or "duplicate acks" in text:
         clauses.append("tcp.analysis.duplicate_ack")
+    if "zero-window" in text or "zero window" in text:
+        clauses.append(TCP_ZERO_WINDOW_FILTER)
+    if "handshake" in text or "syn packet" in text or "syn packets" in text or "connection setup" in text:
+        clauses.append(TCP_SYN_FILTER)
     if "reset" in text or "resets" in text:
         clauses.append("tcp.flags.reset == 1")
     if "expert warning" in text or "expert warnings" in text or "expert-marked" in text:
         clauses.append("_ws.expert")
+    if "bssid" in text and protocol_detail(state.context, "wlan_bssid", "wlan", "bssid"):
+        clauses.append(f"wlan.bssid == {protocol_detail(state.context, 'wlan_bssid', 'wlan', 'bssid')}")
+    if "ssid" in text and protocol_detail(state.context, "wlan_ssid", "wlan", "ssid"):
+        clauses.append(f'wlan.ssid == "{protocol_detail(state.context, "wlan_ssid", "wlan", "ssid")}"')
+    if ("http host" in text or "web host" in text) and protocol_detail(state.context, "http_host", "http", "host"):
+        clauses.append(f'http.host == "{protocol_detail(state.context, "http_host", "http", "host")}"')
+    if "http response" in text or "http responses" in text:
+        clauses.append(HTTP_RESPONSE_FILTER)
+    if "redirect response" in text or "redirect responses" in text or "http redirect" in text or "http redirects" in text:
+        clauses.append(HTTP_REDIRECT_FILTER)
+    if "management frame" in text or "management frames" in text:
+        clauses.append("wlan.fc.type == 0")
+    if "control frame" in text or "control frames" in text:
+        clauses.append("wlan.fc.type == 1")
+    if "data frame" in text or "data frames" in text:
+        clauses.append("wlan.fc.type == 2")
+    if "beacon" in text or "beacons" in text:
+        clauses.append("wlan.fc.type_subtype == 0x08")
+    if "probe request and response" in text or "probe requests and responses" in text or "probe traffic" in text or "probe frame" in text or "probe frames" in text:
+        clauses.append(WIFI_PROBE_SUBTYPE_FILTER)
+    elif "probe request" in text or "probe requests" in text:
+        clauses.append("wlan.fc.type_subtype == 0x04")
+    elif "probe response" in text or "probe responses" in text:
+        clauses.append("wlan.fc.type_subtype == 0x05")
+    if "authentication and association" in text or "authentication or association" in text:
+        clauses.append(WIFI_AUTH_ASSOC_SUBTYPE_FILTER)
+    elif "reassociation" in text:
+        clauses.append("(wlan.fc.type_subtype == 0x02 || wlan.fc.type_subtype == 0x03)")
+    elif "association" in text and "reassociation" not in text:
+        clauses.append(WIFI_ASSOC_SUBTYPE_FILTER)
+    elif "authentication" in text:
+        clauses.append("wlan.fc.type_subtype == 0x0B")
+    if "deauthentication" in text or "disassociation" in text:
+        clauses.append(WIFI_DEAUTH_SUBTYPE_FILTER)
+    channel_match = re.search(r"\bchannel\s+(\d{1,3})\b", text)
+    if channel_match and ("wireless" in text or "wifi" in text or "wi-fi" in text or "wlan" in text or "802.11" in text or protocol_detail(state.context, "wlan_channel", "wlan", "channel")):
+        clauses.append(f"wlan_radio.channel == {channel_match.group(1)}")
+    elif ("this wireless channel" in text or "this wifi channel" in text or "this wi-fi channel" in text or "this wlan channel" in text or "this 802.11 channel" in text) and protocol_detail(state.context, "wlan_channel", "wlan", "channel"):
+        clauses.append(f"wlan_radio.channel == {protocol_detail(state.context, 'wlan_channel', 'wlan', 'channel')}")
     if state.context.get("dns_name") and "this queried name" in text:
         clauses.append(f'dns.qry.name == "{state.context["dns_name"]}"')
+    if "fragment" in text or "fragments" in text or "mtu" in text:
+        clauses.append(IP_FRAGMENT_FILTER)
+    if "time exceeded" in text and "icmp" in text:
+        clauses.append("icmp.type == 11")
+    if "destination unreachable" in text and "icmp" in text:
+        clauses.append("icmp.type == 3")
+    if "redirect" in text and "icmp" in text:
+        clauses.append("icmp.type == 5")
     noise_key = state.resolved.get("noise_kind") or extract_noise(text)
     if noise_key:
         clauses.append(f"!({COMMON_NOISE[noise_key]})")
@@ -1764,7 +2738,8 @@ def apply_playbook_selection(state: SessionState, playbook_id: Optional[str]) ->
         playbook = PLAYBOOKS[playbook_id]
         state.playbook_id = playbook.playbook_id
         state.applied_filters = []
-        state.suggested_actions = guided_next_steps(state)
+        reset_investigation_state(state)
+        refresh_guidance_state(state)
         state.messages.append({
             "type": "assistant_text",
             "text": f"Playbook active: {playbook.name}. {playbook_guidance_summary(playbook)}",
@@ -1779,7 +2754,8 @@ def apply_playbook_selection(state: SessionState, playbook_id: Optional[str]) ->
 
     state.playbook_id = None
     state.applied_filters = []
-    state.suggested_actions = guided_next_steps(state)
+    reset_investigation_state(state)
+    refresh_guidance_state(state)
     state.messages.append({
         "type": "assistant_text",
         "text": generic_mode_text(state),
@@ -1803,6 +2779,13 @@ def response_payload(state: SessionState) -> Dict[str, Any]:
         "playbook": playbook_state_payload(state),
         "recommended_playbook": recommended_playbook_payload(state),
         "suggested_actions": state.suggested_actions,
+        "investigation_goal": state.investigation_goal,
+        "investigation_lane": state.investigation_lane,
+        "handrail": state.handrail,
+        "guided_history": state.guided_history,
+        "user_observations": state.user_observations,
+        "baseline": baseline_payload(state),
+        "reference_assets": reference_assets_payload(state),
         "backend_confirmed": state.backend_confirmed,
     }
 
@@ -1813,13 +2796,13 @@ def session_web_url(session_id: str) -> str:
 
 
 def apply_context_update(state: SessionState, context: Dict[str, Any], source_label: str = "Wireshark") -> None:
-    updated_context = dict(context)
+    updated_context = normalize_context_payload(context)
     updated_context["packet_protocol"] = infer_packet_protocol(updated_context)
     state.context = updated_context
     state.pending = None
     state.resolved = {}
     state.applied_filters = []
-    state.suggested_actions = guided_next_steps(state)
+    refresh_guidance_state(state)
     summary = summary_from_context(state.context)
     state.messages.append({
         "type": "system_notice",
@@ -1865,9 +2848,31 @@ def export_transcript_markdown(state: SessionState) -> str:
         f"- Selected MAC: `{summary['selected_mac']}`",
         f"- Current filter: `{summary['current_filter'] or '(empty)'}`",
         "",
+    ]
+
+    if state.baseline_snapshot:
+        baseline = state.baseline_snapshot
+        baseline_summary = baseline.get("summary") or {}
+        lines.extend([
+            "## Saved Baseline",
+            "",
+            f"- Saved at: `{baseline.get('saved_at', '')}`",
+            f"- Playbook: `{baseline.get('playbook_name') or 'generic'}`",
+            f"- Protocol: `{baseline_summary.get('protocol', '')}`",
+            f"- Source: `{baseline_summary.get('source', '')}`",
+            f"- Destination: `{baseline_summary.get('destination', '')}`",
+            f"- Current filter: `{baseline_summary.get('current_filter') or '(empty)'}`",
+        ])
+        if baseline.get("note"):
+            lines.append(f"- Note: {baseline['note']}")
+        lines.extend([
+            "",
+        ])
+
+    lines.extend([
         "## Transcript",
         "",
-    ]
+    ])
 
     for message in state.messages:
         message_type = message.get("type")
@@ -2003,6 +3008,8 @@ def api_session_message(session_id: str):
     if backend_selection_required(state):
         state.messages.append({"type": "error", "text": "Set the background AI backend first."})
         return jsonify(response_payload(state))
+    state.investigation_lane = "freeform"
+    refresh_handrail_state(state)
     state.messages.append({"type": "user_message", "text": text})
 
     clarification = maybe_make_clarification(state, text)
@@ -2035,6 +3042,8 @@ def api_session_clarification(session_id: str):
         return jsonify(response_payload(state))
     pending = state.pending
     state.pending = None
+    state.investigation_lane = "freeform"
+    refresh_handrail_state(state)
     state.resolved[pending["kind"]] = option_id
     state.messages.append({"type": "user_choice", "text": option_id})
 
@@ -2067,7 +3076,9 @@ def api_session_clarification(session_id: str):
 @app.post("/api/session/<session_id>/clear")
 def api_session_clear(session_id: str):
     state = get_state(session_id)
-    state.suggested_actions = guided_next_steps(state)
+    reset_investigation_state(state)
+    refresh_guidance_state(state)
+    state.baseline_snapshot = {}
     state.messages = initial_messages(state)
     state.pending = None
     state.resolved = {}
@@ -2095,7 +3106,8 @@ def api_session_settings(session_id: str):
     state.settings = {"provider": provider, "model": model}
     state.backend_confirmed = True
     state.applied_filters = []
-    state.suggested_actions = guided_next_steps(state)
+    reset_investigation_state(state)
+    refresh_guidance_state(state)
     state.messages = initial_messages(state)
     return jsonify(response_payload(state))
 
@@ -2113,6 +3125,8 @@ def api_session_playbook(session_id: str):
         return jsonify(response_payload(state))
     if playbook_id not in PLAYBOOKS:
         return jsonify({"error": "Unknown playbook"}), 400
+    playbook = PLAYBOOKS[playbook_id]
+    state.messages.append({"type": "user_choice", "text": f"Use Playbook: {playbook.name}"})
     apply_playbook_selection(state, playbook_id)
     return jsonify(response_payload(state))
 
@@ -2126,10 +3140,14 @@ def api_session_action(session_id: str):
     prompt = (payload.get("prompt") or "").strip()
     note = (payload.get("note") or "").strip()
     origin_prompt = (payload.get("origin_prompt") or "").strip()
+    step_id = (payload.get("step_id") or "").strip()
+    result = (payload.get("result") or "").strip()
     if backend_selection_required(state):
         state.messages.append({"type": "error", "text": "Set the background AI backend first."})
         return jsonify(response_payload(state))
     user_text = label or prompt or "Action"
+    current_step = (state.handrail or {}).get("current_step") or {}
+    guided_step = current_step if current_step.get("step_id") == step_id or not step_id else {"step_id": step_id}
     if kind == "playbook_open":
         state.messages.append({"type": "user_choice", "text": user_text})
         state.messages.append(playbook_selector_message(state))
@@ -2142,6 +3160,106 @@ def api_session_action(session_id: str):
         state.messages.append({"type": "user_choice", "text": user_text})
         state.messages.append(explain_filter_with_ai(state, prompt))
         return jsonify(response_payload(state))
+    if kind == "baseline_save":
+        state.messages.append({"type": "user_choice", "text": user_text or "Save this view as baseline"})
+        state.baseline_snapshot = baseline_snapshot_from_state(state, note=note)
+        refresh_guidance_state(state)
+        baseline_summary = state.baseline_snapshot.get("summary") or {}
+        state.messages.append({
+            "type": "assistant_text",
+            "text": (
+                f"Baseline saved for {baseline_summary.get('protocol', '')} traffic "
+                f"from {baseline_summary.get('source', '')} to {baseline_summary.get('destination', '')}. "
+                "You can now compare later packet contexts against this saved view."
+            ),
+        })
+        return jsonify(response_payload(state))
+    if kind == "baseline_compare":
+        state.messages.append({"type": "user_choice", "text": user_text or "Compare to saved baseline"})
+        state.messages.append(baseline_comparison_message(state))
+        return jsonify(response_payload(state))
+    if kind == "baseline_clear":
+        state.messages.append({"type": "user_choice", "text": user_text or "Clear saved baseline"})
+        state.baseline_snapshot = {}
+        refresh_guidance_state(state)
+        state.messages.append({
+            "type": "assistant_text",
+            "text": "Saved baseline cleared. SharkBot will treat the current packet view as the only active context again.",
+        })
+        return jsonify(response_payload(state))
+    if kind == "guided_step_start":
+        state.investigation_lane = "guided"
+        state.messages.append({"type": "user_choice", "text": user_text})
+        update_guided_history(state, guided_step, status="started", note=note)
+        if current_step:
+            state.messages.append({
+                "type": "assistant_text",
+                "text": (
+                    f"Handrail step active: {current_step.get('title', 'Guided step')}. "
+                    f"{current_step.get('instructions', '')}"
+                ).strip(),
+            })
+        refresh_handrail_state(state)
+        return jsonify(response_payload(state))
+    if kind == "guided_step_result":
+        state.investigation_lane = "guided"
+        state.messages.append({"type": "user_choice", "text": user_text})
+        if note:
+            state.messages.append({"type": "user_message", "text": f"Guided note: {note}"})
+        if result:
+            state.user_observations.append({
+                "step_id": step_id or current_step.get("step_id", ""),
+                "result": result,
+                "label": HANDRAIL_OBSERVATION_LABELS.get(result, result),
+                "note": note,
+                "timestamp": current_timestamp(),
+            })
+        update_guided_history(state, guided_step, status="done", observation=result, note=note)
+        refresh_handrail_state(state)
+        next_step = (state.handrail or {}).get("current_step") or {}
+        if next_step:
+            state.messages.append({
+                "type": "assistant_text",
+                "text": (
+                    f"Recorded: {HANDRAIL_OBSERVATION_LABELS.get(result, result)}. "
+                    f"Next guided step: {next_step.get('title', 'Continue the investigation')}."
+                ),
+            })
+        return jsonify(response_payload(state))
+    if kind == "guided_step_skip":
+        state.investigation_lane = "guided"
+        state.messages.append({"type": "user_choice", "text": user_text})
+        update_guided_history(state, guided_step, status="skipped", note=note)
+        refresh_handrail_state(state)
+        return jsonify(response_payload(state))
+    if kind == "guided_step_alternate":
+        state.investigation_lane = "guided"
+        state.messages.append({"type": "user_choice", "text": user_text})
+        state.user_observations.append({
+            "step_id": step_id or current_step.get("step_id", ""),
+            "result": "different_view",
+            "label": HANDRAIL_OBSERVATION_LABELS["different_view"],
+            "note": note or "User requested another guided approach.",
+            "timestamp": current_timestamp(),
+        })
+        update_guided_history(
+            state,
+            guided_step,
+            status="done",
+            observation="different_view",
+            note=note or "User requested another guided approach.",
+        )
+        refresh_handrail_state(state)
+        return jsonify(response_payload(state))
+    if kind == "guided_step_freeform":
+        state.investigation_lane = "freeform"
+        state.messages.append({"type": "user_choice", "text": user_text})
+        state.messages.append({
+            "type": "assistant_text",
+            "text": "Free-form lane active. The handrail stays available while you investigate independently in Wireshark.",
+        })
+        refresh_handrail_state(state)
+        return jsonify(response_payload(state))
     if kind == "playbook_ai_recommendation":
         state.messages.append({"type": "user_choice", "text": user_text})
         message = explain_packet(state, prompt)
@@ -2151,6 +3269,8 @@ def api_session_action(session_id: str):
         if playbook:
             next_steps = playbook_steps_after_ai_guidance(state, playbook)
             state.suggested_actions = next_steps
+            state.investigation_lane = "guided"
+            refresh_handrail_state(state)
             state.messages.append({
                 "type": "suggested_actions",
                 "title": f"After the AI recommendation for {playbook.name}",
@@ -2173,6 +3293,8 @@ def api_session_action(session_id: str):
         state.applied_filters.append({"filter": prompt, "note": note, "origin_prompt": origin_prompt})
         next_steps = playbook_steps_after_filter(state, playbook, prompt, origin_prompt=origin_prompt)
         state.suggested_actions = next_steps
+        state.investigation_lane = "guided"
+        refresh_handrail_state(state)
         state.messages.append({
             "type": "assistant_text",
             "text": playbook_filter_checkpoint_message(state, playbook, prompt, note=note),
@@ -2190,6 +3312,8 @@ def api_session_action(session_id: str):
         return jsonify(response_payload(state))
     if not prompt:
         return jsonify(response_payload(state))
+    state.investigation_lane = "freeform"
+    refresh_handrail_state(state)
     state.messages.append({"type": "user_choice", "text": user_text})
     clarification = maybe_make_clarification(state, prompt)
     if clarification:

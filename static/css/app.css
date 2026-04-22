@@ -656,6 +656,151 @@ select option,
   margin-top: 12px;
 }
 
+.handrail-card {
+  border-left: 5px solid var(--ai);
+  background:
+    linear-gradient(180deg, rgba(24, 182, 164, 0.16), rgba(24, 182, 164, 0.07)),
+    var(--bubble-system);
+  border-color: rgba(24, 182, 164, 0.34);
+}
+
+.trail-card {
+  border-left: 5px solid var(--system);
+  background:
+    linear-gradient(180deg, rgba(126, 140, 255, 0.14), rgba(126, 140, 255, 0.06)),
+    var(--bubble-system);
+  border-color: rgba(126, 140, 255, 0.34);
+}
+
+.handrail-goal {
+  margin: 2px 0 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.handrail-section {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(24, 182, 164, 0.2);
+  background: rgba(24, 182, 164, 0.05);
+}
+
+.handrail-section-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ai);
+}
+
+.handrail-section-body,
+.handrail-alternate-item,
+.handrail-trail-item {
+  margin-top: 6px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.handrail-note-input {
+  margin-top: 12px;
+}
+
+.handrail-reference {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(24, 182, 164, 0.26);
+  background: rgba(24, 182, 164, 0.04);
+}
+
+.handrail-reference-image {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  margin-top: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.handrail-reference-caption {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.handrail-alternates,
+.handrail-trail {
+  margin-top: 12px;
+}
+
+.trail-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 12px;
+}
+
+.trail-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 140, 255, 0.28);
+  background: rgba(126, 140, 255, 0.12);
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.trail-filter,
+.trail-history {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(126, 140, 255, 0.2);
+  background: rgba(126, 140, 255, 0.05);
+}
+
+.trail-filter-code {
+  display: block;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.trail-history-item {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(126, 140, 255, 0.16);
+}
+
+.trail-history-item:first-of-type {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.trail-history-main {
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.trail-history-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .playbook-cta-card {
   margin-top: 12px;
   padding: 14px;

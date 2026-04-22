@@ -26,22 +26,157 @@ rule_hints = [
   "btl2cap",
 ]
 
+preferred_guidance = [
+  "open_protocol_hierarchy",
+  "scope_host_or_device",
+  "open_packet_lengths",
+  "open_expert_information",
+  "review_current_filter",
+]
+
+fallback_guidance = [
+  "ask_ai_for_next_move",
+]
+
+handrail_reason = "The BLE playbook now supports a structured handrail so the analyst can branch from noisy captures, peer identification, or their own BLE pivots without losing the investigation trail."
+
 [[suggested_actions]]
 label = "Explain this BTLE packet"
 prompt = "Explain this BTLE packet"
+kind = "explain_packet"
 
 [[suggested_actions]]
 label = "Explain this BLE exchange"
 prompt = "Explain this packet in the context of this BLE exchange"
+kind = "review_current_filter"
 
 [[suggested_actions]]
 label = "Show all traffic involving this device"
 prompt = "Show all traffic involving this MAC"
+kind = "scope_host_or_device"
 
 [[suggested_actions]]
 label = "Show related BTLE traffic"
 prompt = "Show all BTLE traffic involving this device"
+kind = "apply_filter"
 
 [[suggested_actions]]
 label = "Why does this BTLE traffic look unusual?"
 prompt = "Why does this BTLE traffic look unusual?"
+kind = "explain_packet"
+
+[[handrail_rules]]
+observation = "helped"
+step_id = "scope_ble_device"
+title = "Scope The BLE Device"
+kind = "apply_filter"
+rationale = "Once the BLE peer stands out, isolate that device so ATT/GATT traffic and control procedures stop mixing together."
+instructions = "Apply the display filter `{ble_device_filter}` if it matches the BLE device you identified."
+look_for = "A cleaner view of advertisements, ATT/GATT exchanges, or control procedures tied to one peer."
+expected_outcome = "You should know whether the BLE issue belongs to one device or a broader set of peers."
+common_mistake = "Do not keep every BLE peer in view if one address clearly matters most."
+alternate_path = "If the device roles are still unclear, compare the protocol mix first."
+
+[[handrail_rules]]
+observation = "too_much_noise"
+step_id = "open_protocol_hierarchy"
+title = "Open Protocol Hierarchy"
+kind = "open_protocol_hierarchy"
+rationale = "If the BLE capture is noisy, confirm whether the real issue is in advertisements, ATT/GATT traffic, or another protocol layer."
+instructions = "Open Statistics > Protocol Hierarchy and compare BLE-related protocols in the current view."
+look_for = "Whether ATT, GATT, L2CAP, or broader Bluetooth traffic is the layer that should drive the next step."
+expected_outcome = "You should know which BLE protocol layer to focus on next."
+common_mistake = "Do not keep broadening if the hierarchy already tells you which BLE layer matters most."
+alternate_path = "If one device already stands out, isolate that peer directly."
+
+[[handrail_rules]]
+observation = "nothing_useful"
+step_id = "open_packet_lengths"
+title = "Open Packet Lengths"
+kind = "open_packet_lengths"
+rationale = "If peer scoping did not help, compare packet sizes to see whether the BLE issue is mostly advertisement churn, control noise, or stalled ATT/GATT payloads."
+instructions = "Open Statistics > Packet Lengths for the current BLE view or filtered peer scope."
+look_for = "Short advertisement/control-heavy buckets, abrupt loss of expected ATT/GATT-sized frames, or one size cluster dominating the issue."
+expected_outcome = "You should know whether the BLE problem looks like advertisement noise, control-procedure churn, or a stalled data exchange."
+common_mistake = "Do not infer the exact opcode from size alone; use packet lengths to choose which peer or procedure to inspect next."
+alternate_path = "If one peer already stands out, isolate that BLE device first."
+
+[[handrail_rules]]
+observation = "unexpected"
+step_id = "review_current_filter"
+title = "Continue From The Unexpected BLE Clue"
+kind = "review_current_filter"
+rationale = "Unexpected BLE findings often become the key clue, so the handrail should continue from your pivot."
+instructions = "Stay on the BLE view you used and summarize the peer, opcode, or procedure that changed what you think matters."
+look_for = "One BLE clue SharkBot can continue from, such as a repeated ATT opcode, control failure, or one dominant peer."
+expected_outcome = "You should be able to continue the BLE investigation from your own finding."
+common_mistake = "Do not broaden again if one peer or opcode already stands out clearly."
+alternate_path = "If you need to re-anchor, isolate the BLE device first."
+
+[[handrail_rules]]
+observation = "different_view"
+step_id = "review_current_filter"
+title = "Continue From Your Wireshark Pivot"
+kind = "review_current_filter"
+rationale = "The BLE handrail should follow the analyst's pivot instead of resetting the investigation."
+instructions = "Stay on the view you opened and summarize the BLE peer, procedure, or ATT/GATT clue that stood out."
+look_for = "One concrete BLE clue SharkBot can continue from."
+expected_outcome = "You should be able to resume guided BLE analysis from your own view."
+common_mistake = "Do not retell the whole session; report only the clue that changes the next move."
+alternate_path = "If you want to re-anchor, use Protocol Hierarchy to confirm the dominant BLE layer first."
+
+[[handrail_rules]]
+step_id = "open_protocol_hierarchy"
+title = "Open Protocol Hierarchy"
+kind = "open_protocol_hierarchy"
+rationale = "Start by confirming which BLE layer dominates the issue before you chase one ATT or control packet in isolation."
+instructions = "Open Statistics > Protocol Hierarchy and compare BLE, ATT/GATT, and L2CAP weight in the current view."
+look_for = "Whether the BLE issue is mainly advertisements, ATT/GATT activity, or another Bluetooth control pattern."
+expected_outcome = "You should know which BLE layer deserves the next focused check."
+common_mistake = "Do not assume the selected BLE packet represents the main behavior in the capture."
+alternate_path = "If one BLE peer already stands out, isolate that device directly."
+
+[[handrail_alternates]]
+step_id = "open_expert_information"
+title = "Open Expert Information"
+kind = "open_expert_information"
+rationale = "If BLE peer scoping is unclear, let Wireshark surface the next anomaly worth following."
+instructions = "Open Analyze > Expert Information and review BLE-related warnings and notes."
+look_for = "Which anomaly points to the next BLE peer or procedure to inspect."
+
+[[handrail_alternates]]
+step_id = "open_protocol_hierarchy"
+title = "Open Protocol Hierarchy"
+kind = "open_protocol_hierarchy"
+rationale = "If the BLE capture is mixed, confirm which layer should drive the next step."
+instructions = "Open Statistics > Protocol Hierarchy and compare ATT/GATT, L2CAP, and related BLE layers."
+look_for = "Which BLE layer dominates the issue in view."
+
+[[handrail_alternates]]
+step_id = "open_packet_lengths"
+title = "Open Packet Lengths"
+kind = "open_packet_lengths"
+rationale = "If BLE traffic feels noisy, compare the frame-size distribution before you chase one procedure."
+instructions = "Open Statistics > Packet Lengths for the current BLE scope."
+look_for = "Advertisement-heavy buckets, control-noise clusters, or missing ATT/GATT-sized traffic."
+
+[[next_step_rules]]
+id = "recommended_btle_explain"
+label = "Recommended next step: Explain this BTLE packet"
+prompt = "Explain this BTLE packet"
+kind = "recommended_step"
+current_filter_present = false
+
+[[next_step_rules]]
+id = "recommended_btle_investigation_device"
+label = "Recommended next step: Show all traffic involving this BLE device"
+prompt = "Show all traffic involving this MAC"
+kind = "recommended_step"
+context_flags_all = ["has_preferred_device_mac"]
+
+[[filter_step_rules]]
+id = "after_filter_btle_explain"
+label = "Recommended next step: Explain this BTLE packet"
+prompt = "Explain this BTLE packet"
+kind = "recommended_step"
+filter_tags_any = ["mac_scope", "btle"]

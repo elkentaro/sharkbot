@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-label="Wireshark Flow Graph reference">
+  <rect width="1200" height="720" fill="#0f172a"/>
+  <rect x="40" y="36" width="1120" height="648" rx="18" fill="#111827" stroke="#334155" stroke-width="2"/>
+  <rect x="72" y="72" width="1056" height="46" rx="10" fill="#1e293b"/>
+  <text x="96" y="101" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="26" font-weight="700">Statistics &gt; Flow Graph</text>
+  <text x="162" y="182" fill="#93c5fd" font-family="Arial, sans-serif" font-size="22" font-weight="700">Client</text>
+  <text x="842" y="182" fill="#93c5fd" font-family="Arial, sans-serif" font-size="22" font-weight="700">Server</text>
+  <line x1="210" y1="202" x2="210" y2="548" stroke="#334155" stroke-width="3"/>
+  <line x1="930" y1="202" x2="930" y2="548" stroke="#334155" stroke-width="3"/>
+  <line x1="240" y1="250" x2="900" y2="250" stroke="#38bdf8" stroke-width="6"/>
+  <polygon points="900,250 878,238 878,262" fill="#38bdf8"/>
+  <text x="292" y="236" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="20">HTTP GET /index.html</text>
+  <line x1="900" y1="316" x2="240" y2="316" stroke="#34d399" stroke-width="6"/>
+  <polygon points="240,316 262,304 262,328" fill="#34d399"/>
+  <text x="548" y="302" fill="#e5e7eb" font-family="Arial, sans-serif" font-size="20">200 OK headers</text>
+  <line x1="240" y1="392" x2="900" y2="392" stroke="#f87171" stroke-width="6" stroke-dasharray="14 10"/>
+  <polygon points="900,392 878,380 878,404" fill="#f87171"/>
+  <text x="356" y="378" fill="#fecaca" font-family="Arial, sans-serif" font-size="20">Request continues but reply stalls here</text>
+  <text x="94" y="594" fill="#fcd34d" font-family="Arial, sans-serif" font-size="24" font-weight="700">Look for where the exchange stops, reverses, or never gets a reply.</text>
+  <text x="94" y="634" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="22">Useful when Follow Stream is too verbose and you need sequence direction at a glance.</text>
+</svg>
