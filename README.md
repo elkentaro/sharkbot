@@ -4,7 +4,7 @@
 
 SharkBot is a Wireshark companion app for packet explanation and display-filter generation.
 
-Current release: `v1.8.0`
+Current release: `v1.8.1`
 
 Current protocol guidance coverage:
 

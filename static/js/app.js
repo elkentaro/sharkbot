@@ -106,7 +106,7 @@ function appendMessageTitle(wrapper, text) {
   if (!text) return null;
   const title = document.createElement('div');
   title.className = 'message-title';
-  title.textContent = text;
+  title.innerHTML = decorateMenuPaths(escapeHtml(text));
   wrapper.appendChild(title);
   return title;
 }
@@ -116,6 +116,15 @@ function appendMessageBody(wrapper, text, className = 'message-body') {
   const body = document.createElement('div');
   body.className = className;
   body.textContent = text;
+  wrapper.appendChild(body);
+  return body;
+}
+
+function appendRichMessageBody(wrapper, text, className = 'message-body message-body-rich') {
+  if (!text) return null;
+  const body = document.createElement('div');
+  body.className = className;
+  body.innerHTML = renderRichText(text);
   wrapper.appendChild(body);
   return body;
 }
@@ -144,6 +153,19 @@ function clearOptimisticExchange() {
   messagesEl.querySelectorAll('.optimistic-user, .optimistic-assistant').forEach((el) => el.remove());
 }
 
+const MENU_ROOT_PATTERN = '(?:Analyze|Statistics|Telephony|View|File|Edit|Capture|Wireless|Help|Tools)';
+const MENU_SEGMENT_PATTERN = '[A-Za-z0-9/&()_-]+(?: [A-Za-z0-9/&()_-]+)*';
+const MENU_PATH_RE = new RegExp(`\\b(${MENU_ROOT_PATTERN}(?:\\s&gt;\\s${MENU_SEGMENT_PATTERN})+)\\b`, 'g');
+
+function decorateMenuPaths(html) {
+  return String(html || '').replace(MENU_PATH_RE, (fullPath) => {
+    const segments = fullPath.split(/\s&gt;\s/);
+    const joined = segments
+      .map((segment) => `<span class="menu-path-segment">${segment}</span>`)
+      .join('<span class="menu-path-chevron">&gt;</span>');
+    return `<span class="menu-path">${joined}</span>`;
+  });
+}
 
 function renderRichText(text) {
   const source = String(text || '');
@@ -168,12 +190,26 @@ function renderRichText(text) {
   }
 
   function fmtInline(s) {
-    return escapeHtml(s)
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`([^`]+)`/g, (_, codeText) => {
-        const className = looksLikeFilterLine(codeText) ? 'rich-filter-inline' : '';
-        return `<code class="${className}">${codeText}</code>`;
-      });
+    const codeSpans = [];
+    const withoutCode = String(s || '').replace(/`([^`]+)`/g, (_, codeText) => {
+      const token = `__CODE_SPAN_${codeSpans.length}__`;
+      codeSpans.push(codeText);
+      return token;
+    });
+
+    let formatted = escapeHtml(withoutCode)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    formatted = decorateMenuPaths(formatted);
+
+    codeSpans.forEach((codeText, index) => {
+      const className = looksLikeFilterLine(codeText) ? 'rich-filter-inline' : '';
+      formatted = formatted.replace(
+        `__CODE_SPAN_${index}__`,
+        `<code class="${className}">${escapeHtml(codeText)}</code>`,
+      );
+    });
+    return formatted;
   }
 
   for (const rawLine of lines) {
@@ -310,8 +346,8 @@ function appendHandrailSection(wrapper, title, text) {
   block.appendChild(heading);
 
   const body = document.createElement('div');
-  body.className = 'handrail-section-body';
-  body.textContent = text;
+  body.className = 'handrail-section-body rich-block handrail-rich-block';
+  body.innerHTML = renderRichText(text);
   block.appendChild(body);
 
   wrapper.appendChild(block);
@@ -447,8 +483,8 @@ function makeHandrailCard(state) {
 
   if (state?.investigation_goal) {
     const goal = document.createElement('div');
-    goal.className = 'handrail-goal';
-    goal.textContent = state.investigation_goal;
+    goal.className = 'handrail-goal message-body-rich';
+    goal.innerHTML = renderRichText(state.investigation_goal);
     wrapper.appendChild(goal);
   }
 
@@ -473,7 +509,7 @@ function makeHandrailCard(state) {
     if (step.reference_title) {
       const refTitle = document.createElement('div');
       refTitle.className = 'handrail-section-title';
-      refTitle.textContent = `Reference: ${step.reference_title}`;
+      refTitle.innerHTML = decorateMenuPaths(escapeHtml(`Reference: ${step.reference_title}`));
       media.appendChild(refTitle);
     }
 
@@ -485,8 +521,8 @@ function makeHandrailCard(state) {
 
     if (step.reference_caption) {
       const caption = document.createElement('div');
-      caption.className = 'handrail-reference-caption';
-      caption.textContent = step.reference_caption;
+      caption.className = 'handrail-reference-caption message-body-rich';
+      caption.innerHTML = renderRichText(step.reference_caption);
       media.appendChild(caption);
     }
 
@@ -538,7 +574,7 @@ function makeHandrailCard(state) {
     handrail.alternates.forEach((item) => {
       const alt = document.createElement('div');
       alt.className = 'handrail-alternate-item';
-      alt.textContent = `${item.title}: ${item.instructions}`;
+      alt.innerHTML = renderRichText(`**${item.title}:** ${item.instructions}`);
       alternates.appendChild(alt);
     });
     wrapper.appendChild(alternates);
@@ -563,7 +599,7 @@ function appendSourceNote(wrapper, message) {
 
   const text = document.createElement('span');
   text.className = 'meta-note';
-  text.textContent = message.source_note;
+  text.innerHTML = decorateMenuPaths(escapeHtml(message.source_note));
   row.appendChild(text);
   wrapper.appendChild(row);
 }
@@ -688,10 +724,10 @@ function renderMessage(message) {
   wrapper.className = `msg ${message.type}`;
   if (message.type === 'system_notice') {
     appendMessageLabel(wrapper, 'System', 'label label-system');
-    appendMessageBody(wrapper, message.text);
+    appendRichMessageBody(wrapper, message.text);
   } else if (message.type === 'assistant_text') {
     appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
-    appendMessageBody(wrapper, message.text);
+    appendRichMessageBody(wrapper, message.text);
   } else if (message.type === 'user_message' || message.type === 'user_choice') {
     appendMessageLabel(wrapper, 'YOU:', 'label-user-text');
     appendMessageBody(wrapper, message.text);
@@ -711,7 +747,7 @@ function renderMessage(message) {
     wrapper.appendChild(metaLine);
   } else if (message.type === 'clarification') {
     appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
-    appendMessageBody(wrapper, message.question);
+    appendRichMessageBody(wrapper, message.question);
     const row = document.createElement('div');
     row.className = 'option-row';
     message.options.forEach((option) => row.appendChild(makeChip(option.label, async () => answerClarification(option.id))));
@@ -722,7 +758,7 @@ function renderMessage(message) {
       ? 'label label-error'
       : (message.response_source === 'rule_based' ? 'label label-rule' : 'label label-ai');
     appendMessageLabel(wrapper, sourceLabel, labelClass);
-    appendMessageBody(wrapper, message.explanation || 'Proposed filter');
+    appendRichMessageBody(wrapper, message.explanation || 'Proposed filter');
     const block = document.createElement('div');
     block.className = 'filter-block';
     block.textContent = message.filter;
@@ -824,7 +860,7 @@ function renderMessage(message) {
     appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
     appendMessageTitle(wrapper, message.title || 'Suggested actions');
     if (message.text) {
-      appendMessageBody(wrapper, message.text, 'playbook-inline-body');
+      appendRichMessageBody(wrapper, message.text, 'playbook-inline-body message-body-rich');
     }
     const { playbookAction, remaining } = splitPlaybookAction(message.items);
     const showDedicatedPlaybookCta = /based on this analysis|back to generic guidance|continue this investigation/i.test(message.title || '');
@@ -837,7 +873,7 @@ function renderMessage(message) {
     wrapper.classList.add('playbook-inline-card');
     appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
     appendMessageTitle(wrapper, message.title || 'Choose a playbook');
-    appendMessageBody(wrapper, message.text || 'Choose a playbook to guide the investigation.', 'playbook-inline-body');
+    appendRichMessageBody(wrapper, message.text || 'Choose a playbook to guide the investigation.', 'playbook-inline-body message-body-rich');
 
     const playbooks = message.playbooks || [];
     if (playbooks.length) {
@@ -861,8 +897,8 @@ function renderMessage(message) {
 
       const preview = playbooks.find((item) => item.id === recommendedId) || playbooks[0];
       const summary = document.createElement('div');
-      summary.className = 'playbook-inline-body';
-      summary.textContent = preview?.description || '';
+      summary.className = 'playbook-inline-body message-body-rich';
+      summary.innerHTML = renderRichText(preview?.description || '');
       wrapper.appendChild(summary);
 
       const actions = document.createElement('div');
@@ -892,13 +928,13 @@ function renderMessage(message) {
 
       select.addEventListener('change', () => {
         const next = playbooks.find((item) => item.id === select.value);
-        summary.textContent = next?.description || '';
+        summary.innerHTML = renderRichText(next?.description || '');
         syncSelectorControls();
       });
     }
   } else if (message.type === 'error') {
     appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
-    appendMessageBody(wrapper, message.text);
+    appendRichMessageBody(wrapper, message.text);
   } else {
     appendMessageLabel(wrapper, 'Assistant', 'label label-assistant');
     appendMessageBody(wrapper, JSON.stringify(message));

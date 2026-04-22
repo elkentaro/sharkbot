@@ -1,5 +1,11 @@
 # Change Log
 
+## v1.8.1 - 2026-04-23
+
+- polished the browser UI to make Wireshark menu paths render as explicit navigation cues instead of plain sentence text
+- expanded menu-path emphasis across assistant guidance, handrail instructions, alternate routes, and reference captions/titles
+- improved guided-card readability so beginner users can follow “where to click next” more easily
+
 ## v1.8.0 - 2026-04-23
 
 - added the `v1.8` guided handrail system with metadata-driven next-step selection across the built-in playbooks
